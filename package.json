@@ -1,0 +1,14 @@
+{
+  "name": "reuse-os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "7THLEAF USED GOODS OS - 中古品在庫・複数販路出品システム",
+  "scripts": {
+    "push": "clasp push",
+    "pull": "clasp pull",
+    "open": "clasp open"
+  },
+  "devDependencies": {
+    "@google/clasp": "^2.4.2"
+  }
+}

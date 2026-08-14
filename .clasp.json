@@ -1,0 +1,14 @@
+{
+  "scriptId": "ここにApps ScriptのスクリプトIDを貼る",
+  "rootDir": "src",
+  "filePushOrder": [
+    "src/phase0-implementation.gs",
+    "src/price-engine.gs",
+    "src/listing-generator.gs",
+    "src/channel-router.gs",
+    "src/channel-adapters.gs",
+    "src/inventory-manager.gs",
+    "src/phase0-batch-runner.gs",
+    "src/measurement-gas.gs"
+  ]
+}
