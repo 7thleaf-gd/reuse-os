@@ -1,4 +1,7 @@
 node_modules/
-.clasp.json.local
 *.log
 .DS_Store
+
+# 秘密情報を含むファイル。絶対にコミットしない
+src/setup-secrets.gs
+.clasp.json.local

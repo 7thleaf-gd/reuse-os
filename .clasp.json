@@ -2,6 +2,7 @@
   "scriptId": "ここにApps ScriptのスクリプトIDを貼る",
   "rootDir": "src",
   "filePushOrder": [
+    "src/config.gs",
     "src/phase0-implementation.gs",
     "src/price-engine.gs",
     "src/listing-generator.gs",

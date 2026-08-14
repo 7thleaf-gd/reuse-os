@@ -32,32 +32,20 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 設定
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-const CONFIG = {
-  // ▼▼▼ ここ3行だけ、ご自分のキーに書き換えてください ▼▼▼
-  VISION_API_KEY: 'ここにGoogle CloudのAPIキーを貼る',
-  GOOGLE_API_KEY: 'ここに同じAPIキーを貼る',
-  DISCOGS_TOKEN:  'ここにDiscogsトークンを貼る',
-  // ▲▲▲ ここまで ▲▲▲
-
-  // 以下は設定済み（書き換え不要）
-  SHEET_ID: '__REDACTED_SHEET_ID__',
-  DRIVE_FOLDER_ID: '__REDACTED_DRIVE_FOLDER_ID__',
-  HOURLY_RATE: 1500,
-
-  // ▼▼▼ 販路連携（inventory-manager.gs用・まだどれも未設定でOK） ▼▼▼
-  // 空文字/未設定のままなら、その販路の自動停止は「not_configured」として
-  // スキップされるだけで、他の処理は止まらない設計にしてあります
-  EBAY_OAUTH_TOKEN: '',              // eBay Inventory API用（未取得）
-  ETSY_API_KEY: '',                  // Etsy Open API v3 keystring（未取得）
-  ETSY_OAUTH_TOKEN: '',              // Etsy OAuth2アクセストークン（未取得）
-  ETSY_SHOP_ID: '',                  // EtsyショップID（未取得）
-  MERCARI_SHOPS_ACCESS_TOKEN: '',    // Mercari Shops Personal API Access Token（未取得）
-  MERCARI_SHOPS_CLIENT_NAME: '',     // Mercari Shopsが契約時に発行するAPI_CLIENT_NAME（未取得）
-  YAHOO_SHOPPING_ACCESS_TOKEN: '',   // Yahoo!ショッピング商品登録APIアクセストークン（未取得）
-  YAHOO_SHOPPING_SELLER_ID: ''       // Yahoo!ショッピングストアのセラーID（未取得）
-  // ▲▲▲ ここまで ▲▲▲
-};
+//
+// 【移動しました】CONFIG は config.gs に移りました。
+//
+// 以前はこの場所に APIキーを直書きしていましたが、
+// gitにコミットすると履歴へ永久に残り、公開リポジトリでは即漏洩するため、
+// Apps Scriptの「スクリプトプロパティ」から実行時に読む方式へ変更しています。
+// 呼び出し方（CONFIG.VISION_API_KEY 等）は今までと同じです。
+//
+// 設定状況の確認 : checkConfig() を実行
+// 設定方法       : 「⚙ プロジェクトの設定」→「スクリプト プロパティ」
+//                  もしくは setup-secrets.gs（.gitignore済み）を使う
+//
+// ※ config.gs が読み込み順で先頭に来るように .clasp.json の filePushOrder で
+//    固定してあります。
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Canonical Product Record（統一商品レコード）
