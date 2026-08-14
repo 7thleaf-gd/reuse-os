@@ -9,15 +9,24 @@
  * 4. ダッシュボードから「データ同期」ボタンで自動更新
  */
 
-// スプレッドシート ID（設定済み：書き換え不要）
-const SHEET_ID = '__REDACTED_SHEET_ID__';
+// スプレッドシートIDは config.gs 経由でスクリプトプロパティから読みます。
+// （以前はここに直接IDを書いていましたが、gitにコミットすると履歴に永久に残るため移動しました）
 const SHEET_NAME = 'Phase0計測データ';
+
+/** 計測用スプレッドシートを開く。IDはCONFIG（スクリプトプロパティ）から取得 */
+function openMeasurementSpreadsheet_() {
+  if (!CONFIG.SHEET_ID) {
+    throw new Error('SHEET_ID が未設定です。checkConfig() で状態を確認し、' +
+      '「⚙ プロジェクトの設定」→「スクリプト プロパティ」に登録してください。');
+  }
+  return SpreadsheetApp.openById(CONFIG.SHEET_ID);
+}
 
 /**
  * 初期化：Sheets にデータ構造を作成
  */
 function initializeSheet() {
-  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const ss = openMeasurementSpreadsheet_();
   let sheet = ss.getSheetByName(SHEET_NAME);
   
   if (!sheet) {
@@ -59,7 +68,7 @@ function initializeSheet() {
  *   }
  */
 function recordMetrics(metrics) {
-  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const ss = openMeasurementSpreadsheet_();
   const sheet = ss.getSheetByName(SHEET_NAME);
   
   if (!sheet) {
@@ -114,7 +123,7 @@ function recordMetrics(metrics) {
  * Sheets のデータから JSON で最新値を返す
  */
 function getLatestMetrics() {
-  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const ss = openMeasurementSpreadsheet_();
   const sheet = ss.getSheetByName(SHEET_NAME);
   
   const data = sheet.getDataRange().getValues();
@@ -201,7 +210,7 @@ function onImageUploadedToGDrive() {
  * 毎月末に実行
  */
 function generateMonthlyReport() {
-  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const ss = openMeasurementSpreadsheet_();
   const sheet = ss.getSheetByName(SHEET_NAME);
   
   const data = sheet.getDataRange().getValues();
