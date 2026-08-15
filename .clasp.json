@@ -9,6 +9,7 @@
     "src/channel-router.gs",
     "src/channel-adapters.gs",
     "src/inventory-manager.gs",
+    "src/manual-listing-helper.gs",
     "src/phase0-batch-runner.gs",
     "src/measurement-gas.gs"
   ]

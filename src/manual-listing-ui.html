@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<base target="_top">
+<style>
+:root{
+  --paper:#faf8f5; --card:#ffffff;
+  --ink:#211f1c; --ink2:#635d56; --ink3:#9a938a;
+  --rule:#e6e1d9; --rule2:#d3ccc1;
+  --accent:#2f6f6a; --accent-soft:#e6f0ee;
+  --ok:#3f7d5a; --ok-soft:#e9f2ec;
+  --hold:#9a6a24; --hold-soft:#f8efdf;
+  --warn:#a8452f; --warn-soft:#fbeae5;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+  font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:680px;margin:0 auto;padding:16px 14px 60px}
+h1{font-size:19px;margin:0 0 2px;letter-spacing:-.01em}
+.sub{font-size:13px;color:var(--ink2);margin:0 0 16px}
+
+.tabs{display:flex;gap:6px;margin-bottom:18px;position:sticky;top:0;background:var(--paper);padding:8px 0;z-index:5}
+.tab{
+  flex:1;padding:9px 10px;border:1px solid var(--rule2);border-radius:9px;background:var(--card);
+  font:inherit;font-size:13.5px;font-weight:600;color:var(--ink2);cursor:pointer;text-align:center
+}
+.tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.tab .n{font-size:11.5px;opacity:.8;margin-left:3px}
+
+.item{background:var(--card);border:1px solid var(--rule);border-radius:12px;margin-bottom:14px;overflow:hidden}
+.item-h{padding:12px 14px;border-bottom:1px solid var(--rule)}
+.sku{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--ink3);letter-spacing:.02em}
+.name{font-size:15px;font-weight:650;line-height:1.45;margin-top:1px}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+.tag{font-size:11.5px;padding:2px 9px;border-radius:99px;background:var(--paper);border:1px solid var(--rule);color:var(--ink2)}
+.tag.p{background:var(--accent-soft);border-color:var(--accent-soft);color:var(--accent);font-weight:600}
+
+.ch{border-top:1px solid var(--rule)}
+.ch:first-child{border-top:none}
+.ch-h{
+  padding:9px 14px;background:var(--paper);font-size:13px;font-weight:650;
+  display:flex;justify-content:space-between;align-items:center;gap:10px
+}
+.ch-b{padding:12px 14px}
+
+.fld{margin-bottom:13px}
+.fld:last-child{margin-bottom:0}
+.fld-h{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px}
+.lbl{font-size:11px;font-weight:700;letter-spacing:.07em;color:var(--ink3)}
+.cnt{font-size:11px;font-family:ui-monospace,Menlo,monospace;color:var(--ink3)}
+.cnt.over{color:var(--warn);font-weight:700}
+.cnt.unknown{color:var(--ink3);font-style:italic}
+.val{
+  background:var(--paper);border:1px solid var(--rule);border-radius:8px;padding:10px 11px;
+  font-size:13.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:190px;overflow:auto
+}
+.val.t{font-weight:600;white-space:normal}
+
+.cp{
+  font:inherit;font-size:12px;font-weight:700;background:var(--accent);color:#fff;border:0;
+  padding:5px 13px;border-radius:7px;cursor:pointer;white-space:nowrap
+}
+.cp:active{opacity:.75}
+.cp.done{background:var(--ok)}
+
+.act{padding:11px 14px;border-top:1px solid var(--rule);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn2{
+  font:inherit;font-size:13px;font-weight:650;background:var(--card);color:var(--accent);
+  border:1.5px solid var(--accent);padding:7px 15px;border-radius:8px;cursor:pointer
+}
+.btn2:active{background:var(--accent-soft)}
+.btn2[disabled]{opacity:.45;cursor:default}
+
+.hint{font-size:11.5px;color:var(--ink3);margin-top:7px;line-height:1.55}
+.drop{
+  font-size:11.5px;color:var(--hold);background:var(--hold-soft);
+  border-radius:7px;padding:7px 10px;margin-top:7px;line-height:1.55
+}
+.warnbox{
+  font-size:12px;color:var(--warn);background:var(--warn-soft);
+  border-radius:7px;padding:8px 11px;margin-top:9px;line-height:1.55
+}
+
+.cl{background:var(--card);border:1px solid var(--rule);border-radius:11px;padding:12px 14px;margin-bottom:10px}
+.cl.u{border-color:var(--warn);background:var(--warn-soft)}
+.cl-t{font-size:14px;font-weight:650;margin-bottom:2px}
+.cl-m{font-size:12px;color:var(--ink2);font-family:ui-monospace,Menlo,monospace}
+.cl .act{padding:10px 0 0;border-top:none}
+
+.empty{text-align:center;padding:48px 20px;color:var(--ink3);font-size:14px}
+.loading{text-align:center;padding:40px;color:var(--ink3);font-size:14px}
+.hide{display:none}
+#toast{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(80px);
+  background:var(--ink);color:var(--paper);padding:10px 20px;border-radius:99px;font-size:13px;
+  font-weight:600;transition:transform .22s ease;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.18)
+}
+#toast.show{transform:translateX(-50%) translateY(0)}
+.foot{margin-top:26px;font-size:11.5px;color:var(--ink3);line-height:1.7;border-top:1px solid var(--rule);padding-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>出品ヘルパー</h1>
+  <p class="sub">アプリを開いて、貼るだけの状態にしてあります。</p>
+
+  <div class="tabs">
+    <button class="tab on" id="tabA" onclick="show('a')">出品する<span class="n" id="nA"></span></button>
+    <button class="tab" id="tabB" onclick="show('b')">消す<span class="n" id="nB"></span></button>
+  </div>
+
+  <div id="paneA"><div class="loading">読み込み中…</div></div>
+  <div id="paneB" class="hide"><div class="loading">読み込み中…</div></div>
+
+  <div class="foot">
+    文字数は公式ヘルプで確認できたものだけ表示しています。<br>
+    商品説明の上限はメルカリ・ラクマ・ヤフオクいずれも公式に記載が見つからなかったため、
+    <b>自動では切り詰めません</b>。長い場合は貼り付け先で確認してください。
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+var DATA = { a: [], b: [] };
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+
+function toast(msg){
+  var t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(function(){ t.classList.remove('show'); }, 1900);
+}
+
+/* GASのサンドボックス内では navigator.clipboard が使えないことがあるため、
+   textarea + execCommand を主経路にする */
+function copyText(text, btn){
+  var ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed'; ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select(); ta.setSelectionRange(0, ta.value.length);
+  var ok = false;
+  try { ok = document.execCommand('copy'); } catch(e){ ok = false; }
+  document.body.removeChild(ta);
+
+  if (!ok && navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(function(){ flash(btn); }, function(){ toast('コピーできませんでした'); });
+    return;
+  }
+  if (ok) flash(btn); else toast('コピーできませんでした');
+}
+function flash(btn){
+  if(!btn) return;
+  var old = btn.textContent;
+  btn.textContent = 'コピー済'; btn.classList.add('done');
+  setTimeout(function(){ btn.textContent = old; btn.classList.remove('done'); }, 1400);
+}
+
+function show(which){
+  document.getElementById('paneA').classList.toggle('hide', which !== 'a');
+  document.getElementById('paneB').classList.toggle('hide', which !== 'b');
+  document.getElementById('tabA').classList.toggle('on', which === 'a');
+  document.getElementById('tabB').classList.toggle('on', which === 'b');
+}
+
+function load(){
+  google.script.run.withSuccessHandler(function(items){
+    DATA.a = items || [];
+    document.getElementById('nA').textContent = DATA.a.length ? '(' + DATA.a.length + ')' : '';
+    renderA();
+  }).withFailureHandler(function(e){
+    document.getElementById('paneA').innerHTML = '<div class="empty">読み込みに失敗しました<br>' + esc(e.message) + '</div>';
+  }).getManualListingQueue();
+
+  google.script.run.withSuccessHandler(function(items){
+    DATA.b = items || [];
+    document.getElementById('nB').textContent = DATA.b.length ? '(' + DATA.b.length + ')' : '';
+    renderB();
+  }).withFailureHandler(function(e){
+    document.getElementById('paneB').innerHTML = '<div class="empty">読み込みに失敗しました<br>' + esc(e.message) + '</div>';
+  }).getManualCleanupQueue();
+}
+
+function renderA(){
+  var el = document.getElementById('paneA');
+  if (!DATA.a.length){ el.innerHTML = '<div class="empty">出品待ちはありません</div>'; return; }
+
+  var html = '';
+  DATA.a.forEach(function(it, ii){
+    html += '<div class="item"><div class="item-h">';
+    html += '<div class="sku">' + esc(it.sku) + '</div>';
+    html += '<div class="name">' + esc(it.productName || '(商品名なし)') + '</div>';
+    html += '<div class="tags">';
+    if (it.format) html += '<span class="tag">' + esc(it.format) + '</span>';
+    if (it.cost !== '' && it.cost != null) html += '<span class="tag">仕入 ' + esc(it.cost) + '</span>';
+    if (it.estPrice !== '' && it.estPrice != null)
+      html += '<span class="tag p">相場 ' + esc(it.estPrice) + ' ' + esc(it.estCurrency) + '</span>';
+    html += '</div></div>';
+
+    it.channels.forEach(function(ch, ci){
+      var over = ch.titleCount > ch.titleLimit;
+      html += '<div class="ch"><div class="ch-h"><span>' + esc(ch.label) + '</span></div><div class="ch-b">';
+
+      // タイトル
+      html += '<div class="fld"><div class="fld-h"><span class="lbl">商品名</span>';
+      html += '<span class="cnt' + (over ? ' over' : '') + '">' + ch.titleCount + ' / ' + ch.titleLimit + '</span></div>';
+      html += '<div style="display:flex;gap:8px;align-items:flex-start">';
+      html += '<div class="val t" style="flex:1">' + esc(ch.title) + '</div>';
+      html += '<button class="cp" onclick="copyText(DATA.a[' + ii + '].channels[' + ci + '].title, this)">コピー</button>';
+      html += '</div>';
+      if (ch.needsManualTrim){
+        html += '<div class="warnbox">商品名だけで上限を超えています（' + ch.titleCount + '/' + ch.titleLimit +
+                '）。<b>勝手に途中で切っていません</b>ので、貼り付けたあと手で削ってください</div>';
+      } else if (ch.dropped && ch.dropped.length){
+        html += '<div class="drop">文字数に収まらないため <b>' + esc(ch.dropped.join('、')) +
+                '</b> を外しました。必要なら手動で足してください（勝手に途中で切ることはしていません）</div>';
+      }
+      html += '</div>';
+
+      // 説明文
+      html += '<div class="fld"><div class="fld-h"><span class="lbl">商品説明</span>';
+      html += '<span class="cnt unknown">' + (it.description ? it.description.length : 0) + '文字（上限は公式に記載なし）</span></div>';
+      html += '<div style="display:flex;gap:8px;align-items:flex-start">';
+      html += '<div class="val" style="flex:1">' + esc(it.description || '(未生成)') + '</div>';
+      html += '<button class="cp" onclick="copyText(DATA.a[' + ii + '].description, this)">コピー</button>';
+      html += '</div></div>';
+
+      // 価格の目安
+      if (ch.priceMin){
+        html += '<div class="hint">価格は ' + ch.priceMin.toLocaleString() + '円 〜 ' +
+                ch.priceMax.toLocaleString() + '円 の範囲で設定できます（公式確認済み）</div>';
+      }
+      if (it.warnings){
+        html += '<div class="warnbox">' + esc(it.warnings) + '</div>';
+      }
+      html += '<div class="hint">' + esc(ch.verifiedNote) + '</div>';
+
+      html += '</div>';
+      html += '<div class="act"><button class="btn2" onclick="didList(\'' + esc(it.sku) + '\',\'' +
+              esc(ch.channel) + '\',this)">' + esc(ch.label) + 'に出品した</button></div>';
+      html += '</div>';
+    });
+
+    html += '</div>';
+  });
+  el.innerHTML = html;
+}
+
+function renderB(){
+  var el = document.getElementById('paneB');
+  if (!DATA.b.length){ el.innerHTML = '<div class="empty">手で消すものはありません</div>'; return; }
+
+  var html = '<p class="sub" style="margin-bottom:12px">売れた商品の出品が残っています。' +
+             '消さないと二重販売になります。</p>';
+  DATA.b.forEach(function(it){
+    html += '<div class="cl' + (it.urgent ? ' u' : '') + '">';
+    html += '<div class="cl-t">' + esc(it.label) + ' の出品を消す</div>';
+    html += '<div class="cl-m">' + esc(it.sku) + (it.externalId ? ' · ' + esc(it.externalId) : '') + '</div>';
+    if (it.urgent){
+      html += '<div class="warnbox" style="margin-top:8px">自動停止が確認できていません。' +
+              '実際にまだ買える状態かもしれないので、最優先で確認してください</div>';
+    }
+    html += '<div class="act"><button class="btn2" onclick="didClean(\'' + esc(it.sku) + '\',\'' +
+            esc(it.channel) + '\',this)">消した</button></div>';
+    html += '</div>';
+  });
+  el.innerHTML = html;
+}
+
+function didList(sku, channel, btn){
+  btn.disabled = true; btn.textContent = '記録中…';
+  google.script.run.withSuccessHandler(function(r){
+    toast(r && r.ok ? '記録しました' : (r ? r.note : '失敗しました'));
+    load();
+  }).withFailureHandler(function(e){
+    btn.disabled = false; toast('エラー: ' + e.message);
+  }).markListedFromUI(sku, channel, '');
+}
+
+function didClean(sku, channel, btn){
+  btn.disabled = true; btn.textContent = '記録中…';
+  google.script.run.withSuccessHandler(function(r){
+    toast(r && r.ok ? '削除済みにしました' : (r ? r.note : '失敗しました'));
+    load();
+  }).withFailureHandler(function(e){
+    btn.disabled = false; toast('エラー: ' + e.message);
+  }).markCleanupDoneFromUI(sku, channel);
+}
+
+load();
+</script>
+</body>
+</html>

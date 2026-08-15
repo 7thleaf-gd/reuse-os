@@ -218,6 +218,13 @@ function registerInventoryItem(record, costPrice) {
     ]);
   });
 
+  // コピペ用の出品文をフルで保存する。
+  // pending_approval 側は先頭120文字のプレビューしか持たないため、
+  // 実際に貼り付けられる本文はこちらに置く（manual-listing-helper.gs）
+  if (typeof saveListingCopy_ === 'function') {
+    saveListingCopy_(sku, record);
+  }
+
   return sku;
 }
 
