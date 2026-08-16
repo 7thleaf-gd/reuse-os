@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<base target="_top">
+<?!= include('ui-styles') ?>
+<style>
+.prog{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:13px 15px;margin-bottom:16px}
+.prog .top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}
+.prog .t{font-size:14px;font-weight:650}
+.bar{height:7px;background:var(--rule);border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);border-radius:99px;transition:width .3s ease}
+
+.f{border-top:1px solid var(--rule)}
+.f:first-child{border-top:none}
+.f-b{padding:13px 14px}
+.f-h{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:3px}
+.f-l{font-size:13.5px;font-weight:650;line-height:1.45}
+.row{display:flex;gap:7px;align-items:center;margin-top:8px}
+input[type=text],input[type=password]{
+  flex:1;min-width:0;font:inherit;font-size:13.5px;padding:8px 10px;
+  border:1px solid var(--rule2);border-radius:8px;background:var(--paper);color:var(--ink)
+}
+input:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+.cur{font-size:11.5px;color:var(--ink3);font-family:var(--mono);margin-top:5px}
+.res{font-size:12px;border-radius:7px;padding:8px 10px;margin-top:8px;line-height:1.6;display:none}
+.res.show{display:block}
+.res.ok{background:var(--ok-soft);color:var(--ok)}
+.res.ng{background:var(--warn-soft);color:var(--warn)}
+.res.run{background:var(--paper);color:var(--ink2);border:1px solid var(--rule)}
+.mini{font:inherit;font-size:11.5px;font-weight:650;background:transparent;color:var(--accent);
+  border:0;padding:0;cursor:pointer;text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>セットアップ</h1>
+  <p class="sub">上から順に入れていけば動く状態になります。</p>
+  <div class="nav" id="nav"></div>
+
+  <div id="body"><div class="loading">読み込み中…</div></div>
+
+  <div class="foot">
+    入力した値はこのスクリプトの「スクリプトプロパティ」に保存され、ソースコードには一切書き込まれません。<br>
+    保存後は末尾4文字しか表示しません。画面を他人に見せても値は漏れません。
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+var ST = null;
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function toast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');
+  clearTimeout(t._h);t._h=setTimeout(function(){t.classList.remove('show');},1900);}
+
+function load(){
+  google.script.run.withSuccessHandler(function(st){
+    ST = st; render();
+  }).withFailureHandler(function(e){
+    document.getElementById('body').innerHTML =
+      '<div class="empty">読み込みに失敗しました<br>' + esc(e.message) + '</div>';
+  }).getSetupStatus();
+}
+
+function render(){
+  var base = ST.webAppUrl || '';
+  document.getElementById('nav').innerHTML =
+    '<a href="' + esc(base) + '">ホーム</a>' +
+    '<a class="on" href="' + esc(base) + '?page=setup">セットアップ</a>' +
+    '<a href="' + esc(base) + '?page=listing">出品ヘルパー</a>';
+
+  var pct = ST.requiredTotal ? Math.round(ST.requiredDone / ST.requiredTotal * 100) : 0;
+  var html = '';
+
+  html += '<div class="prog"><div class="top"><span class="t">必須の設定</span>' +
+          '<span class="pill ' + (ST.allRequiredDone ? 'done' : 'todo') + '">' +
+          ST.requiredDone + ' / ' + ST.requiredTotal + '</span></div>' +
+          '<div class="bar"><i style="width:' + pct + '%"></i></div></div>';
+
+  html += renderGroup('basic', '必須の設定');
+  html += renderGroup('channel', '販路の設定（使うものだけでOK）');
+
+  document.getElementById('body').innerHTML = html;
+}
+
+function renderGroup(group, title){
+  var fields = ST.fields.filter(function(f){ return f.group === group; });
+  if (!fields.length) return '';
+
+  var html = '<h2>' + esc(title) + '</h2>';
+  if (group === 'channel'){
+    html += '<p class="sub" style="margin-top:-4px">未設定でも他の機能は動きます。設定しない販路は自動出品・自動停止の対象外になります。</p>';
+  }
+  html += '<div class="card">';
+
+  fields.forEach(function(f, i){
+    var idx = ST.fields.indexOf(f);
+    html += '<div class="f"><div class="f-b">';
+    html += '<div class="f-h"><span class="f-l">' + esc(f.label) + '</span>' +
+            '<span class="pill ' + (f.isSet ? 'done' : (f.required ? 'todo' : 'opt')) + '">' +
+            (f.isSet ? '設定済' : (f.required ? '未設定' : '任意')) + '</span></div>';
+
+    if (f.help) html += '<div class="hint">' + esc(f.help) + '</div>';
+    if (f.linkUrl){
+      html += '<div class="hint"><a href="' + esc(f.linkUrl) + '" target="_blank" rel="noopener">' +
+              esc(f.linkText || f.linkUrl) + ' ↗</a></div>';
+    }
+
+    html += '<div class="row">';
+    html += '<input id="in_' + idx + '" type="' + (f.secret ? 'password' : 'text') +
+            '" placeholder="' + (f.isSet ? '変更する場合のみ入力' : '値を貼り付け') + '" autocomplete="off">';
+    html += '<button class="btn" onclick="save(' + idx + ')">保存</button>';
+    if (f.hasTest) html += '<button class="btn ghost" onclick="test(' + idx + ')">テスト</button>';
+    html += '</div>';
+
+    if (f.isSet) html += '<div class="cur" id="cur_' + idx + '">現在: ' + esc(f.display) + '</div>';
+    else html += '<div class="cur hide" id="cur_' + idx + '"></div>';
+
+    // 手間を減らすショートカット
+    if (f.key === 'SHEET_ID' && ST.activeSheetId){
+      html += '<div class="hint" style="margin-top:7px">' +
+              '<button class="mini" onclick="useActive()">今開いているスプレッドシートを使う</button>' +
+              '（このスクリプトはシートに紐づいています。手入力は不要です）</div>';
+    }
+    if (f.key === 'GOOGLE_API_KEY'){
+      html += '<div class="hint" style="margin-top:7px">' +
+              '<button class="mini" onclick="copyVision()">上のAPIキーと同じにする</button></div>';
+    }
+
+    html += '<div class="res" id="res_' + idx + '"></div>';
+    html += '</div></div>';
+  });
+
+  html += '</div>';
+  return html;
+}
+
+function showRes(idx, cls, msg){
+  var el = document.getElementById('res_' + idx);
+  el.className = 'res show ' + cls;
+  el.textContent = msg;
+}
+
+function save(idx){
+  var f = ST.fields[idx];
+  var input = document.getElementById('in_' + idx);
+  var v = input.value;
+  if (!v.trim() && f.isSet){
+    showRes(idx, 'run', '空のままです。値を消したい場合は半角スペースを入れて保存してください');
+    return;
+  }
+  showRes(idx, 'run', '保存中…');
+  google.script.run.withSuccessHandler(function(r){
+    if (r.ok){
+      showRes(idx, 'ok', r.note);
+      input.value = '';
+      toast('保存しました');
+      load();
+    } else {
+      showRes(idx, 'ng', r.note);
+    }
+  }).withFailureHandler(function(e){
+    showRes(idx, 'ng', 'エラー: ' + e.message);
+  }).saveSetupValue(f.key, v);
+}
+
+function test(idx){
+  var f = ST.fields[idx];
+  showRes(idx, 'run', '接続を確認しています…');
+  google.script.run.withSuccessHandler(function(r){
+    showRes(idx, r.ok ? 'ok' : 'ng', (r.ok ? '✓ ' : '✗ ') + r.note);
+  }).withFailureHandler(function(e){
+    showRes(idx, 'ng', 'エラー: ' + e.message);
+  }).runSetupTest(f.key);
+}
+
+function useActive(){
+  google.script.run.withSuccessHandler(function(r){
+    toast(r.ok ? '設定しました' : r.note); load();
+  }).withFailureHandler(function(e){ toast('エラー: ' + e.message); }).useActiveSpreadsheet();
+}
+
+function copyVision(){
+  google.script.run.withSuccessHandler(function(r){
+    toast(r.ok ? 'コピーしました' : r.note); load();
+  }).withFailureHandler(function(e){ toast('エラー: ' + e.message); }).copyVisionKeyToBooks();
+}
+
+load();
+</script>
+</body>
+</html>

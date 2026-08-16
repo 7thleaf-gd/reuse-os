@@ -3,110 +3,60 @@
 <head>
 <meta charset="utf-8">
 <base target="_top">
+<?!= include('ui-styles') ?>
 <style>
-:root{
-  --paper:#faf8f5; --card:#ffffff;
-  --ink:#211f1c; --ink2:#635d56; --ink3:#9a938a;
-  --rule:#e6e1d9; --rule2:#d3ccc1;
-  --accent:#2f6f6a; --accent-soft:#e6f0ee;
-  --ok:#3f7d5a; --ok-soft:#e9f2ec;
-  --hold:#9a6a24; --hold-soft:#f8efdf;
-  --warn:#a8452f; --warn-soft:#fbeae5;
-}
-*{box-sizing:border-box}
-body{
-  margin:0;background:var(--paper);color:var(--ink);
-  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
-  font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased;
-}
-.wrap{max-width:680px;margin:0 auto;padding:16px 14px 60px}
-h1{font-size:19px;margin:0 0 2px;letter-spacing:-.01em}
-.sub{font-size:13px;color:var(--ink2);margin:0 0 16px}
-
+/* この画面だけで使うスタイル */
 .tabs{display:flex;gap:6px;margin-bottom:18px;position:sticky;top:0;background:var(--paper);padding:8px 0;z-index:5}
-.tab{
-  flex:1;padding:9px 10px;border:1px solid var(--rule2);border-radius:9px;background:var(--card);
-  font:inherit;font-size:13.5px;font-weight:600;color:var(--ink2);cursor:pointer;text-align:center
-}
+.tab{flex:1;padding:9px 10px;border:1px solid var(--rule2);border-radius:9px;background:var(--card);
+  font:inherit;font-size:13.5px;font-weight:600;color:var(--ink2);cursor:pointer;text-align:center}
 .tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .tab .n{font-size:11.5px;opacity:.8;margin-left:3px}
-
 .item{background:var(--card);border:1px solid var(--rule);border-radius:12px;margin-bottom:14px;overflow:hidden}
 .item-h{padding:12px 14px;border-bottom:1px solid var(--rule)}
-.sku{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--ink3);letter-spacing:.02em}
+.sku{font-family:var(--mono);font-size:11.5px;color:var(--ink3);letter-spacing:.02em}
 .name{font-size:15px;font-weight:650;line-height:1.45;margin-top:1px}
 .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
 .tag{font-size:11.5px;padding:2px 9px;border-radius:99px;background:var(--paper);border:1px solid var(--rule);color:var(--ink2)}
 .tag.p{background:var(--accent-soft);border-color:var(--accent-soft);color:var(--accent);font-weight:600}
-
 .ch{border-top:1px solid var(--rule)}
 .ch:first-child{border-top:none}
-.ch-h{
-  padding:9px 14px;background:var(--paper);font-size:13px;font-weight:650;
-  display:flex;justify-content:space-between;align-items:center;gap:10px
-}
+.ch-h{padding:9px 14px;background:var(--paper);font-size:13px;font-weight:650;
+  display:flex;justify-content:space-between;align-items:center;gap:10px}
 .ch-b{padding:12px 14px}
-
 .fld{margin-bottom:13px}
 .fld:last-child{margin-bottom:0}
 .fld-h{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px}
 .lbl{font-size:11px;font-weight:700;letter-spacing:.07em;color:var(--ink3)}
-.cnt{font-size:11px;font-family:ui-monospace,Menlo,monospace;color:var(--ink3)}
+.cnt{font-size:11px;font-family:var(--mono);color:var(--ink3)}
 .cnt.over{color:var(--warn);font-weight:700}
 .cnt.unknown{color:var(--ink3);font-style:italic}
-.val{
-  background:var(--paper);border:1px solid var(--rule);border-radius:8px;padding:10px 11px;
-  font-size:13.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:190px;overflow:auto
-}
+.val{background:var(--paper);border:1px solid var(--rule);border-radius:8px;padding:10px 11px;
+  font-size:13.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:190px;overflow:auto}
 .val.t{font-weight:600;white-space:normal}
-
-.cp{
-  font:inherit;font-size:12px;font-weight:700;background:var(--accent);color:#fff;border:0;
-  padding:5px 13px;border-radius:7px;cursor:pointer;white-space:nowrap
-}
+.cp{font:inherit;font-size:12px;font-weight:700;background:var(--accent);color:#fff;border:0;
+  padding:5px 13px;border-radius:7px;cursor:pointer;white-space:nowrap}
 .cp:active{opacity:.75}
 .cp.done{background:var(--ok)}
-
 .act{padding:11px 14px;border-top:1px solid var(--rule);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.btn2{
-  font:inherit;font-size:13px;font-weight:650;background:var(--card);color:var(--accent);
-  border:1.5px solid var(--accent);padding:7px 15px;border-radius:8px;cursor:pointer
-}
+.btn2{font:inherit;font-size:13px;font-weight:650;background:var(--card);color:var(--accent);
+  border:1.5px solid var(--accent);padding:7px 15px;border-radius:8px;cursor:pointer}
 .btn2:active{background:var(--accent-soft)}
 .btn2[disabled]{opacity:.45;cursor:default}
-
-.hint{font-size:11.5px;color:var(--ink3);margin-top:7px;line-height:1.55}
-.drop{
-  font-size:11.5px;color:var(--hold);background:var(--hold-soft);
-  border-radius:7px;padding:7px 10px;margin-top:7px;line-height:1.55
-}
-.warnbox{
-  font-size:12px;color:var(--warn);background:var(--warn-soft);
-  border-radius:7px;padding:8px 11px;margin-top:9px;line-height:1.55
-}
-
+.drop{font-size:11.5px;color:var(--hold);background:var(--hold-soft);
+  border-radius:7px;padding:7px 10px;margin-top:7px;line-height:1.55}
 .cl{background:var(--card);border:1px solid var(--rule);border-radius:11px;padding:12px 14px;margin-bottom:10px}
 .cl.u{border-color:var(--warn);background:var(--warn-soft)}
 .cl-t{font-size:14px;font-weight:650;margin-bottom:2px}
-.cl-m{font-size:12px;color:var(--ink2);font-family:ui-monospace,Menlo,monospace}
+.cl-m{font-size:12px;color:var(--ink2);font-family:var(--mono)}
 .cl .act{padding:10px 0 0;border-top:none}
-
-.empty{text-align:center;padding:48px 20px;color:var(--ink3);font-size:14px}
-.loading{text-align:center;padding:40px;color:var(--ink3);font-size:14px}
-.hide{display:none}
-#toast{
-  position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(80px);
-  background:var(--ink);color:var(--paper);padding:10px 20px;border-radius:99px;font-size:13px;
-  font-weight:600;transition:transform .22s ease;z-index:50;box-shadow:0 6px 20px rgba(0,0,0,.18)
-}
-#toast.show{transform:translateX(-50%) translateY(0)}
-.foot{margin-top:26px;font-size:11.5px;color:var(--ink3);line-height:1.7;border-top:1px solid var(--rule);padding-top:14px}
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>出品ヘルパー</h1>
   <p class="sub">アプリを開いて、貼るだけの状態にしてあります。</p>
+
+  <div class="nav" id="nav"></div>
 
   <div class="tabs">
     <button class="tab on" id="tabA" onclick="show('a')">出品する<span class="n" id="nA"></span></button>
@@ -169,7 +119,17 @@ function show(which){
   document.getElementById('tabB').classList.toggle('on', which === 'b');
 }
 
+function renderNav(){
+  google.script.run.withSuccessHandler(function(url){
+    document.getElementById('nav').innerHTML =
+      '<a href="' + esc(url) + '">ホーム</a>' +
+      '<a href="' + esc(url) + '?page=setup">セットアップ</a>' +
+      '<a class="on" href="' + esc(url) + '?page=listing">出品ヘルパー</a>';
+  }).getWebAppUrl();
+}
+
 function load(){
+  renderNav();
   google.script.run.withSuccessHandler(function(items){
     DATA.a = items || [];
     document.getElementById('nA').textContent = DATA.a.length ? '(' + DATA.a.length + ')' : '';

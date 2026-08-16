@@ -17,6 +17,29 @@
  * ソースコードとは別の保管場所）から実行時に読み出す。
  * よってソースコードをそのまま公開しても秘密情報は漏れない。
  *
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 【将来ライブラリ化する場合の注意（公式ドキュメントで確認済み）】
+ *
+ * このコードを GAS ライブラリとして配布し、顧客側は薄い呼び出しコードだけ、
+ * という構成にすると「バグ修正をバージョン更新だけで配れる」利点がある。
+ * ただしその構成では下記の getScriptProperties() が破綻する。
+ *
+ * 公式ドキュメントの資源スコープ表では Script Properties は「非共有」であり、
+ * ライブラリ内のコードから呼ぶと参照されるのは
+ * 「ライブラリ自身のプロパティ」で、しかもそのインスタンスは
+ * ライブラリを取り込んだ全スクリプトから見える。
+ * つまり顧客Aが保存したAPIキーを顧客Bが読める状態になる。
+ *
+ * → ライブラリ化する場合は getUserProperties()（公式表で「共有」＝
+ *    取り込み側と同じインスタンスを参照）へ変更すること。
+ *    変更箇所は下の load_() 内の1行のみ。
+ *
+ * なお getActiveSpreadsheet() は「共有」扱いで、ライブラリから呼んでも
+ * 取り込み側のコンテナを返すと明記されているため、そのままで問題ない。
+ *
+ * 現在は「Sheetごとコピーして配る」前提のためライブラリ化していない。
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ *
  * 【設定方法（どちらか片方でOK）】
  *
  * ■ 方法A：Apps Scriptの画面から手で入れる（推奨・コードに一切残らない）
@@ -42,7 +65,7 @@ const PROPERTY_KEYS = {
     'VISION_API_KEY',      // Google Cloud の APIキー（Vision API用）
     'GOOGLE_API_KEY',      // 同上（Google Books API用。同じキーで可）
     'DISCOGS_TOKEN',       // Discogs 開発者トークン
-    'SHEET_ID',            // 作業用スプレッドシートのID
+    'SHEET_ID',            // 作業用スプレッドシートのID（紐づきシートがあれば自動で埋まる）
     'DRIVE_FOLDER_ID'      // 撮影画像を置くDriveフォルダのID
   ],
 
@@ -105,6 +128,20 @@ const CONFIG = (function () {
     PROPERTY_KEYS.REQUIRED.concat(PROPERTY_KEYS.CHANNEL).forEach(function (k) {
       cache[k] = stored[k] || '';
     });
+
+    // SHEET_ID が未設定なら、このスクリプトが紐づいているスプレッドシートを使う。
+    // 【理由】Sheetごとコピーして配る運用だと、コピーした人が
+    // 「自分のSheet IDをURLから探して貼る」という一番つまずきやすい手順を
+    // 踏むことになる。紐づきシートがあるならそれが正解なので自動で埋める。
+    // 明示的に設定されている場合はそちらを優先する（別Sheetを指したい場合に対応）。
+    if (!cache.SHEET_ID) {
+      try {
+        const active = SpreadsheetApp.getActiveSpreadsheet();
+        if (active) cache.SHEET_ID = active.getId();
+      } catch (e) {
+        // スタンドアロンのスクリプトや、テスト環境では紐づきが無い。その場合は空のまま
+      }
+    }
     // 既定値も、プロパティ側に同名があればそちらを優先する
     Object.keys(stored).forEach(function (k) {
       if (cache[k] === undefined || cache[k] === '') cache[k] = stored[k];

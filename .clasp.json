@@ -3,6 +3,8 @@
   "rootDir": "src",
   "filePushOrder": [
     "src/config.gs",
+    "src/web-router.gs",
+    "src/setup-ui.gs",
     "src/phase0-implementation.gs",
     "src/price-engine.gs",
     "src/listing-generator.gs",
