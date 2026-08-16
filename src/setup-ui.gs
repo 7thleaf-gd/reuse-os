@@ -87,24 +87,90 @@ const SETUP_FIELDS = [
   },
 
   // ── 販路（使うものだけ。無くても基本機能は動く）
-  {
-    key: 'EBAY_OAUTH_TOKEN', label: 'eBay アクセストークン', group: 'channel',
-    required: false, secret: true,
-    help: 'eBayへの自動出品・自動停止に使います。未設定でもeBay以外の機能は動きます。',
-    linkText: 'eBay Developer', linkUrl: 'https://developer.ebay.com/my/keys',
-    test: 'testEbay'
-  },
-  { key: 'ETSY_API_KEY', label: 'Etsy APIキー', group: 'channel', required: false, secret: true,
-    help: 'Etsyはヴィンテージ（製造から20年以上）のみ出品可能です。', linkText: 'Etsy Developers', linkUrl: 'https://www.etsy.com/developers', test: null },
-  { key: 'ETSY_OAUTH_TOKEN', label: 'Etsy アクセストークン', group: 'channel', required: false, secret: true, help: '', linkText: null, linkUrl: null, test: null },
-  { key: 'ETSY_SHOP_ID', label: 'Etsy ショップID', group: 'channel', required: false, secret: false, help: '', linkText: null, linkUrl: null, test: null },
-  { key: 'MERCARI_SHOPS_ACCESS_TOKEN', label: 'メルカリShops アクセストークン', group: 'channel', required: false, secret: true,
-    help: 'ショップ管理画面から自分で発行できます。ただし下のクライアント名が無いとAPIは呼べません。', linkText: null, linkUrl: null, test: null },
-  { key: 'MERCARI_SHOPS_CLIENT_NAME', label: 'メルカリShops クライアント名', group: 'channel', required: false, secret: false,
-    help: 'これはメルカリとの契約時に先方から発行される値です。自分では作れません。', linkText: null, linkUrl: null, test: null },
-  { key: 'YAHOO_SHOPPING_ACCESS_TOKEN', label: 'Yahoo!ショッピング アクセストークン', group: 'channel', required: false, secret: true, help: 'ストア出店審査を通っている必要があります。', linkText: null, linkUrl: null, test: null },
-  { key: 'YAHOO_SHOPPING_SELLER_ID', label: 'Yahoo!ショッピング セラーID', group: 'channel', required: false, secret: false, help: '', linkText: null, linkUrl: null, test: null }
+  // 【eBay】アクセストークンは2時間で失効するため、トークンを直接貼るのではなく
+  // アプリ情報を登録して認証し、リフレッシュトークンで自動更新する（ebay-auth.gs）
+  { key: 'EBAY_ENV', label: '環境（sandbox / production）', group: 'channel', platform: 'EBAY',
+    required: false, secret: false, test: null, linkText: null, linkUrl: null,
+    help: 'sandbox と入れると練習用環境につながります。空欄なら本番です。最初はsandboxを強くおすすめします（本番だと実際に売れて発送義務が発生します）' },
+  { key: 'EBAY_CLIENT_ID', label: 'App ID (Client ID)', group: 'channel', platform: 'EBAY',
+    required: false, secret: false, test: null,
+    linkText: 'eBay Developer のキー一覧', linkUrl: 'https://developer.ebay.com/my/keys',
+    help: '' },
+  { key: 'EBAY_CLIENT_SECRET', label: 'Cert ID (Client Secret)', group: 'channel', platform: 'EBAY',
+    required: false, secret: true, test: null, linkText: null, linkUrl: null, help: '' },
+  { key: 'EBAY_RUNAME', label: 'RuName', group: 'channel', platform: 'EBAY',
+    required: false, secret: false, test: null, linkText: null, linkUrl: null,
+    help: 'eBay独自の値です。URLではありません。Developer画面で作成し、その「Auth Accepted URL」に下に表示されているURLを登録してください' },
+  { key: 'EBAY_OAUTH_TOKEN', label: 'アクセストークンを直接貼る（動作確認用）', group: 'channel', platform: 'EBAY',
+    required: false, secret: true, test: 'testEbay', linkText: null, linkUrl: null,
+    help: '⚠️ 2時間で失効します。恒久運用には使えません。上の「eBayと接続」を使ってください' },
+
+  { key: 'ETSY_API_KEY', label: 'APIキー (keystring)', group: 'channel', platform: 'ETSY',
+    required: false, secret: true, test: null,
+    linkText: 'Etsy Developers', linkUrl: 'https://www.etsy.com/developers', help: '' },
+  { key: 'ETSY_OAUTH_TOKEN', label: 'アクセストークン', group: 'channel', platform: 'ETSY',
+    required: false, secret: true, test: null, linkText: null, linkUrl: null, help: '' },
+  { key: 'ETSY_SHOP_ID', label: 'ショップID', group: 'channel', platform: 'ETSY',
+    required: false, secret: false, test: null, linkText: null, linkUrl: null, help: '' },
+
+  { key: 'MERCARI_SHOPS_ACCESS_TOKEN', label: 'アクセストークン', group: 'channel', platform: 'MERCARI_SHOPS',
+    required: false, secret: true, test: null, linkText: null, linkUrl: null,
+    help: 'ショップ管理画面から自分で発行できます' },
+  { key: 'MERCARI_SHOPS_CLIENT_NAME', label: 'クライアント名 (API_CLIENT_NAME)', group: 'channel', platform: 'MERCARI_SHOPS',
+    required: false, secret: false, test: null, linkText: null, linkUrl: null,
+    help: 'これはメルカリとの契約時に先方から発行される値です。自分では作れません' },
+
+  { key: 'YAHOO_SHOPPING_ACCESS_TOKEN', label: 'アクセストークン', group: 'channel', platform: 'YAHOO_SHOPPING',
+    required: false, secret: true, test: null, linkText: null, linkUrl: null, help: '' },
+  { key: 'YAHOO_SHOPPING_SELLER_ID', label: 'セラーID', group: 'channel', platform: 'YAHOO_SHOPPING',
+    required: false, secret: false, test: null, linkText: null, linkUrl: null, help: '' }
 ];
+
+/**
+ * 販路ごとの「今どういう状態か」の説明。
+ * 調べた結果を正直に書く。使えないものは使えないと出す。
+ */
+const PLATFORM_GUIDE = {
+  EBAY: {
+    label: 'eBay',
+    availability: 'ready',
+    summary: '個人セラーでもすぐ使えます。自動出品・自動停止とも可能な唯一の販路です。',
+    steps: [
+      'eBay Developer でアプリを作り、App ID と Cert ID を控える',
+      '同じ画面で RuName を作成し、その「Auth Accepted URL」に下のURLを登録する',
+      '下の欄に App ID / Cert ID / RuName を入れて保存',
+      '「eBayと接続」を押して、eBayの同意画面で許可する'
+    ]
+  },
+  ETSY: {
+    label: 'Etsy',
+    availability: 'limited',
+    summary: 'APIは使えますが、Etsyの規約でハンドメイド・ヴィンテージ(製造から20年以上)・クラフト材料しか出品できません。今どきの中古CDは対象外です。古いレコードや古道具なら通ります。',
+    steps: [
+      'Etsy Developers でアプリを申請する（自分の店舗だけなら比較的早く承認されます）',
+      'APIキーとアクセストークンを取得して下の欄に入れる'
+    ]
+  },
+  MERCARI_SHOPS: {
+    label: 'メルカリShops',
+    availability: 'contract',
+    summary: 'APIは実在しますが、呼び出しに必要なクライアント名がメルカリとの契約時にしか発行されません。アクセストークンだけ自分で作っても動きません。',
+    steps: [
+      'メルカリShopsに出店する（古物商許可が必要）',
+      'メルカリにAPI連携を申し込み、クライアント名を発行してもらう',
+      '両方揃ってから下の欄に入れる'
+    ]
+  },
+  YAHOO_SHOPPING: {
+    label: 'Yahoo!ショッピング',
+    availability: 'review',
+    summary: 'ストア出店の審査を通っている必要があります。なお個人のヤフオク!には出品APIが存在しません（2018年・2020年に提供終了済み）。',
+    steps: [
+      'Yahoo!ショッピングにストア出店し、審査を通す',
+      'アクセストークンとセラーIDを取得して下の欄に入れる'
+    ]
+  }
+};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 状態の取得
@@ -130,6 +196,7 @@ function getSetupStatus() {
       required: f.required, secret: f.secret,
       help: f.help, linkText: f.linkText, linkUrl: f.linkUrl,
       hasTest: !!f.test,
+      platform: f.platform || null,
       isSet: !!v,
       display: maskForUI_(f.key, v, f.secret)
     };
@@ -144,7 +211,12 @@ function getSetupStatus() {
     requiredDone: doneCount,
     allRequiredDone: doneCount === required.length,
     activeSheetId: getActiveSpreadsheetId_(),
-    webAppUrl: getWebAppUrl()
+    webAppUrl: getWebAppUrl(),
+    platforms: Object.keys(PLATFORM_GUIDE).map(function (k) {
+      const g = PLATFORM_GUIDE[k];
+      return { key: k, label: g.label, availability: g.availability, summary: g.summary, steps: g.steps };
+    }),
+    ebay: (typeof getEbayAuthStatus === 'function') ? getEbayAuthStatus() : null
   };
 }
 

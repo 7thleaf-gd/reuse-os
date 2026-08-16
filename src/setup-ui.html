@@ -80,23 +80,88 @@ function render(){
           '<div class="bar"><i style="width:' + pct + '%"></i></div></div>';
 
   html += renderGroup('basic', '必須の設定');
-  html += renderGroup('channel', '販路の設定（使うものだけでOK）');
+  html += renderPlatforms();
 
   document.getElementById('body').innerHTML = html;
 }
 
-function renderGroup(group, title){
-  var fields = ST.fields.filter(function(f){ return f.group === group; });
-  if (!fields.length) return '';
+var AVAIL = {
+  ready:    { pill:'done', text:'すぐ使える' },
+  limited:  { pill:'todo', text:'出品できる商品に制限あり' },
+  contract: { pill:'bad',  text:'契約が必要' },
+  review:   { pill:'bad',  text:'出店審査が必要' }
+};
 
-  var html = '<h2>' + esc(title) + '</h2>';
-  if (group === 'channel'){
-    html += '<p class="sub" style="margin-top:-4px">未設定でも他の機能は動きます。設定しない販路は自動出品・自動停止の対象外になります。</p>';
+function renderPlatforms(){
+  var html = '<h2>販路の設定</h2>';
+  html += '<p class="sub" style="margin-top:-4px">未設定でも他の機能は動きます。' +
+          '設定しない販路は自動出品・自動停止の対象外になり、手動での出品案内だけが出ます。</p>';
+
+  ST.platforms.forEach(function(pf){
+    var a = AVAIL[pf.availability] || AVAIL.ready;
+    html += '<div class="card"><div class="card-h"><span>' + esc(pf.label) + '</span>' +
+            '<span class="pill ' + a.pill + '">' + esc(a.text) + '</span></div>';
+
+    html += '<div class="card-b" style="padding-bottom:6px">';
+    html += '<div style="font-size:13px;color:var(--ink2);line-height:1.7">' + esc(pf.summary) + '</div>';
+    if (pf.steps && pf.steps.length){
+      html += '<ol style="margin:10px 0 0;padding-left:20px;font-size:12.5px;color:var(--ink2);line-height:1.75">';
+      pf.steps.forEach(function(st){ html += '<li>' + esc(st) + '</li>'; });
+      html += '</ol>';
+    }
+
+    // eBayだけは認証ボタンとコールバックURLを出す
+    if (pf.key === 'EBAY' && ST.ebay){
+      html += renderEbayAuth();
+    }
+    html += '</div>';
+
+    var fields = ST.fields.filter(function(f){ return f.platform === pf.key; });
+    fields.forEach(function(f){ html += renderField(ST.fields.indexOf(f)); });
+
+    html += '</div>';
+  });
+  return html;
+}
+
+function renderEbayAuth(){
+  var e = ST.ebay;
+  var html = '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--rule)">';
+
+  html += '<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:8px">';
+  html += '<span class="pill ' + (e.connected ? 'done' : 'todo') + '">' +
+          (e.connected ? '接続済み' : '未接続') + '</span>';
+  html += '<span class="pill opt">' + esc(e.env === 'sandbox' ? '練習用(sandbox)' : '本番(production)') + '</span>';
+  html += '</div>';
+
+  html += '<div class="hint" style="margin-top:0">' + esc(e.note) + '</div>';
+
+  if (e.callbackUrl){
+    html += '<div class="hint" style="margin-top:9px">eBayのRuName設定の「Auth Accepted URL」にこれを登録してください:<br>' +
+            '<span class="mono" style="word-break:break-all;color:var(--ink2)">' + esc(e.callbackUrl) + '</span> ' +
+            '<button class="mini" onclick="copyCb()">コピー</button></div>';
   }
-  html += '<div class="card">';
 
-  fields.forEach(function(f, i){
-    var idx = ST.fields.indexOf(f);
+  html += '<div style="margin-top:11px;display:flex;gap:8px;flex-wrap:wrap">';
+  html += '<button class="btn" onclick="connectEbay()"' + (e.hasApp ? '' : ' disabled') + '>' +
+          (e.connected ? 'eBayと接続し直す' : 'eBayと接続') + '</button>';
+  if (e.connected) html += '<button class="btn ghost" onclick="disconnectEbayUI()">接続を解除</button>';
+  html += '</div>';
+
+  if (e.env !== 'sandbox'){
+    html += '<div class="warnbox">本番環境です。ここでの出品は実際に売れます。' +
+            '練習したい場合は下の「環境」に <b>sandbox</b> と入れて保存してください</div>';
+  }
+
+  html += '<div id="ebayres" class="res"></div>';
+  html += '</div>';
+  return html;
+}
+
+function renderField(idx){
+  var f = ST.fields[idx];
+  var html = '';
+  {
     html += '<div class="f"><div class="f-b">';
     html += '<div class="f-h"><span class="f-l">' + esc(f.label) + '</span>' +
             '<span class="pill ' + (f.isSet ? 'done' : (f.required ? 'todo' : 'opt')) + '">' +
@@ -131,8 +196,15 @@ function renderGroup(group, title){
 
     html += '<div class="res" id="res_' + idx + '"></div>';
     html += '</div></div>';
-  });
+  }
+  return html;
+}
 
+function renderGroup(group, title){
+  var fields = ST.fields.filter(function(f){ return f.group === group; });
+  if (!fields.length) return '';
+  var html = '<h2>' + esc(title) + '</h2><div class="card">';
+  fields.forEach(function(f){ html += renderField(ST.fields.indexOf(f)); });
   html += '</div>';
   return html;
 }
@@ -174,6 +246,36 @@ function test(idx){
   }).withFailureHandler(function(e){
     showRes(idx, 'ng', 'エラー: ' + e.message);
   }).runSetupTest(f.key);
+}
+
+function connectEbay(){
+  var el = document.getElementById('ebayres');
+  el.className = 'res show run'; el.textContent = 'eBayの同意画面を開いています…';
+  google.script.run.withSuccessHandler(function(r){
+    if (!r.ok){ el.className='res show ng'; el.textContent = r.note; return; }
+    el.className='res show run';
+    el.innerHTML = 'eBayの同意画面を開きました。許可するとこの画面に戻ります。<br>' +
+      '開かない場合は <a href="' + r.url + '" target="_blank" rel="noopener">こちらから開いてください</a>';
+    window.open(r.url, '_blank');
+  }).withFailureHandler(function(e){
+    el.className='res show ng'; el.textContent = 'エラー: ' + e.message;
+  }).buildEbayAuthUrl();
+}
+
+function disconnectEbayUI(){
+  google.script.run.withSuccessHandler(function(r){
+    toast(r.note); load();
+  }).withFailureHandler(function(e){ toast('エラー: ' + e.message); }).disconnectEbay();
+}
+
+function copyCb(){
+  var t = ST.ebay && ST.ebay.callbackUrl;
+  if (!t) return;
+  var ta=document.createElement('textarea'); ta.value=t;
+  ta.style.position='fixed'; ta.style.left='-9999px';
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); toast('コピーしました'); }catch(e){ toast('コピーできませんでした'); }
+  document.body.removeChild(ta);
 }
 
 function useActive(){

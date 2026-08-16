@@ -71,7 +71,17 @@ const PROPERTY_KEYS = {
 
   // ── 販路連携（該当する販路を使うときだけ必要）
   CHANNEL: [
-    'EBAY_OAUTH_TOKEN',
+    // eBay：アクセストークンは2時間で失効するため、
+    // リフレッシュトークン（約18ヶ月有効）を保存して自動更新する。
+    // 詳細は ebay-auth.gs を参照。
+    'EBAY_ENV',                 // 'sandbox' または 'production'
+    'EBAY_CLIENT_ID',           // eBay Developer の App ID (Client ID)
+    'EBAY_CLIENT_SECRET',       // Cert ID (Client Secret)
+    'EBAY_RUNAME',              // RuName（eBayはredirect_uriにURLではなくこの値を渡す仕様）
+    'EBAY_REFRESH_TOKEN',       // 認証完了時に自動保存される
+    'EBAY_ACCESS_TOKEN',        // 自動更新される。手で触らない
+    'EBAY_ACCESS_TOKEN_EXPIRES_AT',  // 上の有効期限（ミリ秒）
+    'EBAY_OAUTH_TOKEN',         // 手動で貼る場合の上書き用（2時間で切れる。動作確認向け）
     'ETSY_API_KEY',
     'ETSY_OAUTH_TOKEN',
     'ETSY_SHOP_ID',
@@ -93,7 +103,8 @@ const CONFIG_DEFAULTS = {
  */
 const SECRET_KEYS = [
   'VISION_API_KEY', 'GOOGLE_API_KEY', 'DISCOGS_TOKEN',
-  'EBAY_OAUTH_TOKEN', 'ETSY_API_KEY', 'ETSY_OAUTH_TOKEN',
+  'EBAY_CLIENT_SECRET', 'EBAY_REFRESH_TOKEN', 'EBAY_ACCESS_TOKEN', 'EBAY_OAUTH_TOKEN',
+  'ETSY_API_KEY', 'ETSY_OAUTH_TOKEN',
   'MERCARI_SHOPS_ACCESS_TOKEN', 'YAHOO_SHOPPING_ACCESS_TOKEN'
 ];
 

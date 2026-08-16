@@ -30,6 +30,10 @@
  * 「確認できなかった」ものを推測で埋めない（REUSE開発方針D）。
  *
  * ■ eBay
+ *   認証  : User access token（認可コードフロー）が必須。有効期限2時間。
+ *           リフレッシュトークン（約18ヶ月）から自動更新する仕組みは ebay-auth.gs。
+ *           ホストは環境で変わるため ebayApiBase_() を必ず経由すること
+ *           （直書きするとサンドボックスで動かない）
  *   停止  : withdrawOffer  POST /sell/inventory/v1/offer/{offerId}/withdraw  ✅確認済み
  *           公式に "will end the active eBay listing associated with the offer" と明記
  *   verify: getOffer       GET  /sell/inventory/v1/offer/{offerId}           ✅エンドポイント確認済み
@@ -87,20 +91,25 @@ const EbayAdapter = {
   mode: 'api',
 
   isConfigured: function () {
-    if (!CONFIG.EBAY_OAUTH_TOKEN) {
-      return { ok: false, reason: 'CONFIG.EBAY_OAUTH_TOKEN が未設定' };
-    }
+    // 【重要】eBayのアクセストークンは2時間で失効するため、
+    // 「トークンが入っているか」ではなく「今すぐ有効なトークンを取れるか」で判定する。
+    // 期限が近ければここで自動更新される（ebay-auth.gs）
+    const t = getEbayAccessToken_();
+    if (!t.ok) return { ok: false, reason: t.note };
     return { ok: true, reason: '' };
   },
 
   // externalId = eBayのofferId
   buildStopSteps: function (externalId) {
+    const t = getEbayAccessToken_();
+    // isConfigured() を先に通す前提だが、単体で呼ばれても壊れないようにする
+    const token = t.ok ? t.token : '';
     return [{
       name: 'withdrawOffer',
       request: {
-        url: 'https://api.ebay.com/sell/inventory/v1/offer/' + encodeURIComponent(externalId) + '/withdraw',
+        url: ebayApiBase_() + '/offer/' + encodeURIComponent(externalId) + '/withdraw',
         method: 'post',
-        headers: { Authorization: 'Bearer ' + CONFIG.EBAY_OAUTH_TOKEN },
+        headers: { Authorization: 'Bearer ' + token },
         muteHttpExceptions: true
       }
     }];
@@ -114,10 +123,11 @@ const EbayAdapter = {
   },
 
   buildVerifyRequest: function (externalId) {
+    const t = getEbayAccessToken_();
     return {
-      url: 'https://api.ebay.com/sell/inventory/v1/offer/' + encodeURIComponent(externalId),
+      url: ebayApiBase_() + '/offer/' + encodeURIComponent(externalId),
       method: 'get',
-      headers: { Authorization: 'Bearer ' + CONFIG.EBAY_OAUTH_TOKEN },
+      headers: { Authorization: 'Bearer ' + (t.ok ? t.token : '') },
       muteHttpExceptions: true
     };
   },

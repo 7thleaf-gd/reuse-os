@@ -9,6 +9,7 @@
     "src/price-engine.gs",
     "src/listing-generator.gs",
     "src/channel-router.gs",
+    "src/ebay-auth.gs",
     "src/channel-adapters.gs",
     "src/inventory-manager.gs",
     "src/manual-listing-helper.gs",
