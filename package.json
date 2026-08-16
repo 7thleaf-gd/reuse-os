@@ -4,6 +4,9 @@
   "private": true,
   "description": "7THLEAF USED GOODS OS - 中古品在庫・複数販路出品システム",
   "scripts": {
+    "test": "node test/run-all.js",
+    "check": "node test/check-syntax.js",
+    "verify": "npm run check && npm test",
     "push": "clasp push",
     "pull": "clasp pull",
     "open": "clasp open"

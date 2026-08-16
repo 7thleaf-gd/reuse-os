@@ -1,0 +1,20 @@
+# push / pull request のたびに、構文チェックとテストを自動実行する。
+# 外部APIには一切つながないので、GitHub上で安全に動く。
+name: verify
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: 構文とグローバル名の重複をチェック
+        run: node test/check-syntax.js
+      - name: 全テストを実行
+        run: node test/run-all.js
