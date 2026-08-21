@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<base target="_top">
+<?!= include('ui-styles') ?>
+<style>
+.gate{background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:16px;margin-bottom:14px}
+.gate.ok{border-color:#8ab59a}.gate.ng{border-color:#d49b8e}
+.gate-h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.gate-t{font-size:14px;font-weight:700}
+.checks{display:grid;gap:8px;margin-top:12px}
+.check{border:1px solid var(--rule);border-radius:9px;padding:10px 11px;background:var(--paper)}
+.check-top{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.check-id{font-family:var(--mono);font-size:11px;color:var(--ink3)}
+.check-note{font-size:12.5px;color:var(--ink2);line-height:1.55;margin-top:5px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.btnlink{display:inline-block;padding:9px 14px;border-radius:8px;background:var(--accent);color:#fff;text-decoration:none;font-size:13px;font-weight:650}
+.btnlink.ghost{background:transparent;color:var(--accent);border:1px solid var(--rule2)}
+.warn{font-size:12.5px;line-height:1.65;background:var(--warn-soft);color:var(--warn);padding:10px 12px;border-radius:8px;margin-top:12px}
+.next{font-size:13px;line-height:1.7;color:var(--ink2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Phase 1 試走ゲート</h1>
+  <p class="sub">読むだけの計器盤です。ここから出品・OAuth更新・外部API通信は行いません。</p>
+  <div class="nav" id="nav"></div>
+  <div id="body"><div class="loading">Preflight確認中…</div></div>
+  <div class="foot">Productionは明示確認なしでは必ずBLOCKされます。最初の実走はSandbox 1商品です。</div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>\"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c];});}
+function load(){
+  google.script.run.withSuccessHandler(render).withFailureHandler(function(e){
+    document.getElementById('body').innerHTML='<div class="gate ng"><b>Preflight読取エラー</b><div class="check-note">'+esc(e.message)+'</div></div>';
+  }).getPhase1E2EPreflight();
+}
+function render(st){
+  var base = <?!= JSON.stringify(getWebAppUrl()) ?> || '';
+  document.getElementById('nav').innerHTML =
+    '<a href="'+esc(base)+'">ホーム</a>'+
+    '<a href="'+esc(base)+'?page=setup">セットアップ</a>'+
+    '<a class="on" href="'+esc(base)+'?page=phase1">Phase 1 試走</a>'+
+    '<a href="'+esc(base)+'?page=listing">出品ヘルパー</a>';
+
+  var html='<div class="gate '+(st.ok?'ok':'ng')+'">';
+  html+='<div class="gate-h"><span class="gate-t">'+(st.ok?'Sandbox実走準備 OK':'まだ試走しない')+'</span>'+
+        '<span class="pill '+(st.ok?'done':'bad')+'">'+(st.ok?'PASS':'BLOCKED')+'</span></div>';
+  html+='<div class="next">環境: <b>'+esc(st.env)+'</b><br>次: <b>'+esc(st.next)+'</b></div>';
+  html+='<div class="checks">';
+  (st.checks||[]).forEach(function(c){
+    html+='<div class="check"><div class="check-top"><span class="check-id">'+esc(c.id)+'</span>'+
+          '<span class="pill '+(c.ok?'done':'bad')+'">'+(c.ok?'PASS':'BLOCK')+'</span></div>'+
+          '<div class="check-note">'+esc(c.note)+'</div></div>';
+  });
+  html+='</div>';
+  if(st.env!=='sandbox') html+='<div class="warn">最初の実走はsandbox固定です。セットアップ画面で EBAY_ENV を sandbox にしてから進めてください。</div>';
+  html+='<div class="actions"><a class="btnlink ghost" href="'+esc(base)+'?page=setup">赤い設定を直す</a>'+
+        '<a class="btnlink" href="#" onclick="load();return false">再チェック</a></div>';
+  html+='</div>';
+  document.getElementById('body').innerHTML=html;
+}
+load();
+</script>
+</body>
+</html>
