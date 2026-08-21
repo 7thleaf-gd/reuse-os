@@ -5,6 +5,7 @@
  * 画面の振り分けをここに集約する。各画面はページ名で切り替える。
  *
  *   ?page=setup    セットアップ画面（APIキー等の設定）
+ *   ?page=phase1   Phase 1 試走ゲート（read-only preflight）
  *   ?page=listing  出品ヘルパー（手動販路のコピペ支援）
  *   （省略時）      ホーム
  *
@@ -22,6 +23,7 @@
 const PAGES = {
   home:    { file: 'home-ui',            title: 'REUSE OS' },
   setup:   { file: 'setup-ui',           title: 'REUSE — セットアップ' },
+  phase1:  { file: 'phase1-ui',          title: 'REUSE — Phase 1 試走ゲート' },
   listing: { file: 'manual-listing-ui',  title: 'REUSE — 出品ヘルパー' }
 };
 
