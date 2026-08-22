@@ -18,6 +18,30 @@ local binding
   -> readback
 ```
 
+## Tomorrow 10-minute human lane
+
+Human time is intentionally compressed to authentication and browser-only gates.
+
+From a local checkout of `agent/reuse-os-v0.1-e2e` run:
+
+```bash
+npm run morning
+```
+
+The launcher:
+
+1. confirms the expected development branch;
+2. asks for the Apps Script `scriptId` only if the local `.clasp.json` is still a placeholder;
+3. runs the complete local verification suite;
+4. runs `clasp status`;
+5. requires the human to type `PUSH` exactly before any Apps Script source write;
+6. runs `clasp push` only after that explicit gate;
+7. opens the Apps Script project and prints the owner-only Web App deployment steps.
+
+It never deploys a Web App, enters secrets, performs eBay OAuth, creates a listing, or touches Production by itself.
+
+If the eBay Developer Sandbox keyset does not already exist, creating the developer keyset/RuName may exceed this 10-minute window. In that case stop after the owner-only Web App is deployed and resume the eBay human gate separately. Do not compensate by using Production credentials.
+
 ## 0. Hard rules
 
 - First E2E is **Sandbox only**.
@@ -32,7 +56,13 @@ The repository intentionally keeps a placeholder in tracked `.clasp.json`.
 
 On the local working copy only, replace the placeholder `scriptId` with the target Apps Script project ID. Do not commit that local-only binding change unless the project explicitly decides the ID is safe to publish inside the private repository.
 
-Verify:
+Preferred path:
+
+```bash
+npm run morning
+```
+
+Manual verification if needed:
 
 ```bash
 clasp status
@@ -41,6 +71,14 @@ clasp status
 Expected: the project resolves and `rootDir` is `src`.
 
 ## 2. Push and deploy
+
+Preferred source push path is the explicit gate inside:
+
+```bash
+npm run morning
+```
+
+Manual equivalent:
 
 ```bash
 clasp push
@@ -81,6 +119,8 @@ In eBay Developer:
 4. In Reuse OS setup set `EBAY_ENV=sandbox`.
 5. Save App ID / Cert ID / RuName.
 6. Press `eBayと接続` and complete browser OAuth.
+
+Sandbox keys and Production keys are separate. Never substitute Production credentials for this gate.
 
 ## 5. Read-only preflight
 
