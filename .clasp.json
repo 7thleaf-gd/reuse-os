@@ -5,6 +5,7 @@
     "src/config.gs",
     "src/web-router.gs",
     "src/setup-ui.gs",
+    "src/phase1-e2e-preflight.gs",
     "src/phase0-implementation.gs",
     "src/price-engine.gs",
     "src/listing-generator.gs",

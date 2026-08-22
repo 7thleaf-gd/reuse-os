@@ -2,6 +2,20 @@
 
 中古品の「撮影 → 商品特定 → 相場 → 在庫化 → 複数販路出品 → 売却時の他販路自動停止」を回すシステム。
 
+## 明日の10分導線｜Phase 1 Sandbox
+
+v0.1開発branch `agent/reuse-os-v0.1-e2e` のローカルcheckoutから、まずこれだけ実行します。
+
+```bash
+npm run morning
+```
+
+このランチャーは branch確認 → 必要ならlocal `.clasp.json` のscriptId入力 → 全テスト → `clasp status` → 明示的な `PUSH` 確認 → `clasp push` → Apps Scriptを開く、までを一本道にします。
+
+**自動でWeb App deploy・秘密情報入力・eBay OAuth・出品・Production操作は行いません。** ブラウザ側は owner-only Web App をdeployし、`?page=setup` → `?page=phase1` の順に進みます。最初の実E2EはSandboxだけです。
+
+詳細正本: `PHASE1_RUNBOOK.md` / `VERSION_LOCK.md`
+
 ---
 
 ## なぜこのリポジトリがあるか
