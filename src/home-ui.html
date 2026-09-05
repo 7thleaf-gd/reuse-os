@@ -1,71 +1,9 @@
 <!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="utf-8">
-<base target="_top">
-<?!= include('ui-styles') ?>
-<style>
-.big{display:block;text-decoration:none;color:inherit}
-.big .card-b{display:flex;align-items:center;gap:14px}
-.big .ic{font-size:26px;line-height:1;width:34px;text-align:center}
-.big .tx{flex:1}
-.big .t{font-size:15.5px;font-weight:650}
-.big .d{font-size:12.5px;color:var(--ink2);line-height:1.55}
-.big .go{color:var(--ink3);font-size:18px}
-.status{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <h1>REUSE OS</h1>
-  <p class="sub">中古品の撮影 → 特定 → 在庫 → 出品 → 売却同期</p>
-
-  <div id="gate"><div class="loading">読み込み中…</div></div>
-
-  <div class="foot">
-    このページはあなた専用です。共有設定を「全員」にしないでください。
-  </div>
-</div>
-<div id="toast"></div>
-
-<script>
-function toast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');
-  clearTimeout(t._h);t._h=setTimeout(function(){t.classList.remove('show');},1900);}
-function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){
-  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
-
-google.script.run.withSuccessHandler(function(st){
-  var base = st.webAppUrl || '';
-  var html = '';
-
-  if (!st.allRequiredDone) {
-    html += '<div class="card"><div class="card-b">';
-    html += '<div class="status"><span class="pill todo">セットアップ未完了</span>';
-    html += '<span style="font-size:13px;color:var(--ink2)">必須項目 ' + st.requiredDone + ' / ' + st.requiredTotal + ' 完了</span></div>';
-    html += '<div class="notebox">先にセットアップを済ませてください。APIキーが1つでも欠けていると商品の特定ができません。</div>';
-    html += '</div></div>';
-  } else {
-    html += '<div class="card"><div class="card-b"><div class="status">';
-    html += '<span class="pill done">セットアップ完了</span>';
-    html += '<span style="font-size:13px;color:var(--ink2)">必須項目 ' + st.requiredTotal + ' / ' + st.requiredTotal + '</span>';
-    html += '</div></div></div>';
-  }
-
-  html += '<a class="big card" href="' + esc(base) + '?page=setup"><div class="card-b">' +
-          '<div class="ic">⚙️</div><div class="tx"><div class="t">セットアップ</div>' +
-          '<div class="d">APIキーやシートの設定。接続テストもここでできます</div></div>' +
-          '<div class="go">›</div></div></a>';
-
-  html += '<a class="big card" href="' + esc(base) + '?page=listing"><div class="card-b">' +
-          '<div class="ic">📋</div><div class="tx"><div class="t">出品ヘルパー</div>' +
-          '<div class="d">メルカリ・ラクマ・ヤフオク用の文章。貼るだけの状態で出ます</div></div>' +
-          '<div class="go">›</div></div></a>';
-
-  document.getElementById('gate').innerHTML = html;
-}).withFailureHandler(function(e){
-  document.getElementById('gate').innerHTML =
-    '<div class="empty">読み込みに失敗しました<br>' + esc(e.message) + '</div>';
-}).getSetupStatus();
-</script>
-</body>
-</html>
+<html lang="ja"><head><meta charset="utf-8"><base target="_top"><?!= include('ui-styles') ?>
+<style>.big{display:block;text-decoration:none;color:inherit}.big .card-b{display:flex;align-items:center;gap:14px}.big .ic{font-size:26px;line-height:1;width:34px;text-align:center}.big .tx{flex:1}.big .t{font-size:15.5px;font-weight:650}.big .d{font-size:12.5px;color:var(--ink2);line-height:1.55}.big .go{color:var(--ink3);font-size:18px}.status{display:flex;align-items:center;gap:10px;flex-wrap:wrap}</style></head>
+<body><div class="wrap"><h1>REUSE OS</h1><p class="sub">中央在庫 → 出品 → 売却検知 → RESERVED / SOLD同期</p><div id="gate"><div class="loading">読み込み中…</div></div><div class="foot">Hunterはこの商品UIには含まれません。中央在庫だけが状態正本です。</div></div><div id="toast"></div>
+<script>function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+google.script.run.withSuccessHandler(function(st){var base=st.webAppUrl||'',html='';if(!st.allRequiredDone){html+='<div class="card"><div class="card-b"><div class="status"><span class="pill todo">セットアップ未完了</span><span style="font-size:13px;color:var(--ink2)">必須 '+st.requiredDone+' / '+st.requiredTotal+'</span></div><div class="notebox">まず中央在庫のSheetと商品画像のDriveだけ設定してください。販路認証は使う販路だけ後から接続できます。</div></div></div>'}else{html+='<div class="card"><div class="card-b"><div class="status"><span class="pill done">基本セットアップ完了</span><span style="font-size:13px;color:var(--ink2)">中央在庫を使えます</span></div></div></div>'}
+html+='<a class="big card" href="'+esc(base)+'?page=inventory"><div class="card-b"><div class="ic">📦</div><div class="tx"><div class="t">中央在庫</div><div class="d">商品登録・在庫確認・出品状態・RESERVED / SOLDを確認</div></div><div class="go">›</div></div></a>';
+html+='<a class="big card" href="'+esc(base)+'?page=listing"><div class="card-b"><div class="ic">📋</div><div class="tx"><div class="t">出品ヘルパー</div><div class="d">手動販路向けの出品文と操作支援</div></div><div class="go">›</div></div></a>';
+html+='<a class="big card" href="'+esc(base)+'?page=setup"><div class="card-b"><div class="ic">⚙️</div><div class="tx"><div class="t">セットアップ</div><div class="d">中央在庫と販路認証。eBayは画面からOAuth接続</div></div><div class="go">›</div></div></a>';document.getElementById('gate').innerHTML=html}).withFailureHandler(function(e){document.getElementById('gate').innerHTML='<div class="empty">読み込みに失敗しました<br>'+esc(e.message)+'</div>'}).getSetupStatus();</script></body></html>
