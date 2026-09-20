@@ -8,7 +8,8 @@ import {
   validateSaleEvent,
   nextInventoryAfterSale,
   normalizeListingStatus,
-  shouldClearStopPending
+  shouldClearStopPending,
+  normalizeDiscogsListing
 } from "../src/worker.js";
 
 test("Discogs auth header is built from secret without logging it", () => {
@@ -127,4 +128,31 @@ test("stop queue clears only when sold item has no listed channels left", () => 
   assert.equal(shouldClearStopPending("SOLD", "STOP_PENDING", 1), false);
   assert.equal(shouldClearStopPending("AVAILABLE", "STOP_PENDING", 0), false);
   assert.equal(shouldClearStopPending("SOLD", "SYNCED", 0), false);
+});
+
+
+test("Discogs listing normalization is defensive and numeric", () => {
+  const listing = normalizeDiscogsListing({
+    id: 123,
+    status: "For Sale",
+    condition: "Mint (M)",
+    sleeve_condition: "Mint (M)",
+    location: "BOX1",
+    price: { value: "1500.00", currency: "JPY" },
+    release: { id: 456, description: "Artist - Title" },
+    uri: "https://www.discogs.com/sell/item/123"
+  });
+  assert.deepEqual(listing, {
+    listing_id: "123",
+    release_id: "456",
+    title: "Artist - Title",
+    media_condition: "Mint (M)",
+    sleeve_condition: "Mint (M)",
+    price: 1500,
+    currency: "JPY",
+    status: "For Sale",
+    location: "BOX1",
+    comments: null,
+    uri: "https://www.discogs.com/sell/item/123"
+  });
 });
