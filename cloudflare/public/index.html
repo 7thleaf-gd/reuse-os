@@ -52,6 +52,7 @@
     <div class="card"><b>販売可能</b><div id="available" class="big">0</div></div>
     <div class="card"><b>予約</b><div id="reserved" class="big">0</div></div>
     <div class="card"><b>売却済</b><div id="sold" class="big">0</div></div>
+    <div class="card"><b>他販路停止待ち</b><div id="stopPending" class="big">0</div></div>
   </section>
 
   <section class="card" style="margin-top:12px">
@@ -137,6 +138,7 @@ async function summary() {
   $('#available').textContent = s.available || 0;
   $('#reserved').textContent = s.reserved || 0;
   $('#sold').textContent = s.sold || 0;
+  $('#stopPending').textContent = j.summary?.sync?.stop_pending || 0;
 }
 async function inventory() {
   const j = await api('/api/inventory');
