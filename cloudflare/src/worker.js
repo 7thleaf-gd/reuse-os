@@ -215,6 +215,53 @@ export async function discogsIdentity(env) {
   return discogsRequest(env, "/oauth/identity");
 }
 
+export function normalizeDiscogsListing(listing) {
+  const release = listing?.release || {};
+  const price = listing?.price || {};
+  return {
+    listing_id: listing?.id == null ? null : String(listing.id),
+    release_id: release?.id == null ? null : String(release.id),
+    title: release?.description || release?.title || listing?.title || null,
+    media_condition: listing?.condition || null,
+    sleeve_condition: listing?.sleeve_condition || null,
+    price: Number.isFinite(Number(price?.value)) ? Number(price.value) : null,
+    currency: price?.currency || null,
+    status: listing?.status || null,
+    location: listing?.location || null,
+    comments: listing?.comments || null,
+    uri: listing?.uri || null
+  };
+}
+
+export async function discogsForSale(env, { page = 1, perPage = 50 } = {}) {
+  const identity = await discogsIdentity(env);
+  if (!identity.ok) return identity;
+
+  const username = identity.body?.username;
+  if (!username) return { ok: false, status: 502, error: "DISCOGS_IDENTITY_USERNAME_MISSING" };
+
+  const safePage = Math.max(1, Math.min(10000, Number(page) || 1));
+  const safePerPage = Math.max(1, Math.min(100, Number(perPage) || 50));
+  const path = `/users/${encodeURIComponent(username)}/inventory?status=For%20Sale&page=${safePage}&per_page=${safePerPage}`;
+  const result = await discogsRequest(env, path);
+
+  if (!result.ok) return result;
+
+  const listings = Array.isArray(result.body?.listings)
+    ? result.body.listings.map(normalizeDiscogsListing)
+    : [];
+
+  return {
+    ok: true,
+    status: result.status,
+    body: {
+      username,
+      pagination: result.body?.pagination || null,
+      listings
+    }
+  };
+}
+
 export async function discogsStopListing(env, listingId) {
   const stopped = await discogsRequest(env, `/marketplace/listings/${encodeURIComponent(listingId)}`, { method: "DELETE" });
   if (!(stopped.ok || stopped.status === 404)) return { ok: false, phase: "stop", ...stopped };
@@ -636,6 +683,16 @@ export default {
         r.ok ? 200 : r.status || 502
       );
     }
+    if (pathname === "/api/connectors/discogs/listings" && request.method === "GET") {
+      const page = Number(url.searchParams.get("page") || 1);
+      const perPage = Number(url.searchParams.get("per_page") || 50);
+      const r = await discogsForSale(env, { page, perPage });
+      return json(
+        { ok: r.ok, status: r.status, data: r.ok ? r.body : null, error: r.ok ? null : r.error || r.body },
+        r.ok ? 200 : r.status || 502
+      );
+    }
+
 
     const discogsStop = pathname.match(/^\/api\/connectors\/discogs\/listings\/([^/]+)\/stop$/);
     if (discogsStop && request.method === "POST") {
