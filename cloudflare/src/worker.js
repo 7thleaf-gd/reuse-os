@@ -315,6 +315,27 @@ async function patchInventory(request, env, sku) {
   return json({ ok: true, item: await inventoryDetail(env, sku) });
 }
 
+async function refreshStopPending(env, sku) {
+  const item = await env.DB.prepare(
+    "SELECT status,sync_state FROM inventory WHERE sku=? LIMIT 1"
+  ).bind(sku).first();
+
+  if (!item || item.status !== "SOLD" || item.sync_state !== "STOP_PENDING") {
+    return false;
+  }
+
+  const row = await env.DB.prepare(
+    "SELECT COUNT(*) AS count FROM channel_listings WHERE sku=? AND listing_status='LISTED'"
+  ).bind(sku).first();
+
+  if (Number(row?.count || 0) > 0) return false;
+
+  await env.DB.prepare(
+    "UPDATE inventory SET sync_state='SYNCED',updated_at=CURRENT_TIMESTAMP WHERE sku=?"
+  ).bind(sku).run();
+  return true;
+}
+
 async function upsertChannelListing(request, env, sku) {
   const exists = await env.DB.prepare("SELECT sku FROM inventory WHERE sku=? LIMIT 1").bind(sku).first();
   if (!exists) return json({ ok: false, error: "SKU_NOT_FOUND" }, 404);
@@ -369,8 +390,14 @@ async function upsertChannelListing(request, env, sku) {
     ).run();
   }
 
+  const syncCleared = status !== "LISTED" ? await refreshStopPending(env, sku) : false;
   const item = await inventoryDetail(env, sku);
-  return json({ ok: true, listing: item.listings.find((x) => x.channel === channel && x.external_id === externalId) || null }, existing ? 200 : 201);
+  return json({
+    ok: true,
+    listing: item.listings.find((x) => x.channel === channel && x.external_id === externalId) || null,
+    sync_state: item.sync_state,
+    stop_pending_cleared: syncCleared
+  }, existing ? 200 : 201);
 }
 
 async function listSaleEvents(env) {
