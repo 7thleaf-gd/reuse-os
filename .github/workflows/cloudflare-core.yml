@@ -1,0 +1,26 @@
+name: cloudflare-core
+
+on:
+  push:
+    paths:
+      - "cloudflare/**"
+      - ".github/workflows/cloudflare-core.yml"
+  pull_request:
+    paths:
+      - "cloudflare/**"
+      - ".github/workflows/cloudflare-core.yml"
+
+jobs:
+  verify-cloudflare-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Wrangler
+        run: npm install --prefix cloudflare
+      - name: Unit and syntax checks
+        run: npm --prefix cloudflare test
+      - name: Wrangler dry-run
+        run: npx --prefix cloudflare wrangler deploy --dry-run --config cloudflare/wrangler.jsonc
