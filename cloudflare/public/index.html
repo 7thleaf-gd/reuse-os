@@ -6,49 +6,205 @@
   <title>Reuse OS Core</title>
   <style>
     :root{font-family:Inter,system-ui,sans-serif;color:#111;background:#f5f5f2}
-    body{margin:0}.wrap{max-width:980px;margin:auto;padding:28px}
-    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
+    *{box-sizing:border-box}body{margin:0}.wrap{max-width:1100px;margin:auto;padding:28px}
+    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;gap:12px}
     h1{font-size:30px;margin:0}.tag{font:12px ui-monospace,monospace;border:1px solid #111;border-radius:999px;padding:6px 10px}
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
     .card{background:#fff;border:1px solid #ddd;border-radius:16px;padding:18px}
-    .card b{display:block;margin-bottom:8px}.muted{color:#666;font-size:13px}
-    input,button{font:inherit;padding:10px 12px;border:1px solid #bbb;border-radius:10px}
-    button{background:#111;color:#fff;cursor:pointer}.row{display:flex;gap:8px;flex-wrap:wrap}
-    pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#e8e8e8;padding:14px;border-radius:12px;min-height:80px}
+    .card b{display:block;margin-bottom:8px}.muted{color:#666;font-size:13px}.big{font-size:28px;font-weight:700}
+    input,select,button{font:inherit;padding:10px 12px;border:1px solid #bbb;border-radius:10px;background:#fff}
+    button{background:#111;color:#fff;cursor:pointer;border-color:#111}.ghost{background:#fff;color:#111}
+    .row{display:flex;gap:8px;flex-wrap:wrap}.grow{flex:1;min-width:180px}
+    .form-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px}
+    table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid #eee}
+    th{font-size:12px;color:#666}.pill{display:inline-block;border:1px solid #ccc;border-radius:999px;padding:3px 8px;font-size:11px}
+    .error{color:#b00020}.ok{color:#0a6b2b}
+    pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#e8e8e8;padding:14px;border-radius:12px;min-height:70px}
+    @media(max-width:760px){.form-grid{grid-template-columns:1fr 1fr}.form-grid .wide{grid-column:1/-1}table{font-size:12px}.wrap{padding:16px}}
   </style>
 </head>
 <body>
 <div class="wrap">
-  <header><div><h1>Reuse OS Core</h1><div class="muted">Cloudflare Core v0 · D1 / R2 / Workers</div></div><span class="tag">ADMIN SHELL</span></header>
+  <header>
+    <div><h1>Reuse OS Core</h1><div class="muted">Cloudflare Core v0.1 · central inventory</div></div>
+    <span class="tag">ADMIN SHELL</span>
+  </header>
+
   <section class="grid">
-    <div class="card"><b>Core</b><div id="core">未確認</div></div>
-    <div class="card"><b>Discogs</b><div id="discogs">未確認</div></div>
+    <div class="card"><b>Core</b><div id="core" class="big">…</div></div>
+    <div class="card"><b>Discogs</b><div id="discogs">…</div></div>
     <div class="card"><b>eBay</b><div id="ebay">承認待ち</div></div>
+    <div class="card"><b>R2</b><div id="r2">…</div></div>
   </section>
+
   <section class="card" style="margin-top:12px">
     <b>Admin Token</b>
-    <div class="row"><input id="token" type="password" placeholder="Worker secret ADMIN_TOKEN"><button id="save">保存</button><button id="refresh">在庫を読む</button></div>
-    <div class="muted">v0はBearer token。商品化時はtenant auth / Cloudflare Accessへ置換する。</div>
+    <div class="row">
+      <input class="grow" id="token" type="password" autocomplete="off" placeholder="Worker secret ADMIN_TOKEN">
+      <button id="save">この端末に保存</button>
+      <button id="reload" class="ghost">更新</button>
+    </div>
+    <div class="muted">v0のみlocalStorage保存。商品化時はtenant auth / Cloudflare Accessへ置換。</div>
   </section>
-  <section class="card" style="margin-top:12px"><b>Inventory</b><pre id="out">Cloudflare Coreの配管確認用シェル。</pre></section>
+
+  <section class="grid" style="margin-top:12px">
+    <div class="card"><b>在庫総数</b><div id="total" class="big">0</div></div>
+    <div class="card"><b>販売可能</b><div id="available" class="big">0</div></div>
+    <div class="card"><b>予約</b><div id="reserved" class="big">0</div></div>
+    <div class="card"><b>売却済</b><div id="sold" class="big">0</div></div>
+  </section>
+
+  <section class="card" style="margin-top:12px">
+    <b>在庫を追加</b>
+    <div class="form-grid">
+      <input id="name" class="wide" placeholder="商品名">
+      <select id="category">
+        <option value="MUSIC">音楽</option>
+        <option value="BOOK">本</option>
+        <option value="GAME">ゲーム</option>
+        <option value="INSTRUMENT">楽器</option>
+        <option value="CAMERA">カメラ</option>
+        <option value="APPAREL">服</option>
+        <option value="OTHER">その他</option>
+      </select>
+      <input id="format" placeholder="CD / LP / etc">
+      <input id="price" inputmode="numeric" placeholder="売価 ¥">
+      <input id="location" placeholder="棚番">
+      <button id="add">登録</button>
+    </div>
+    <div id="notice" class="muted" style="margin-top:8px"></div>
+  </section>
+
+  <section class="card" style="margin-top:12px">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <b style="margin:0">Inventory</b>
+      <span class="muted">最新200件</span>
+    </div>
+    <div style="overflow:auto">
+      <table>
+        <thead><tr><th>SKU</th><th>商品</th><th>種別</th><th>状態</th><th>価格</th><th>棚</th><th>数量</th></tr></thead>
+        <tbody id="inventory"><tr><td colspan="7" class="muted">未読込</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:12px">
+    <b>Console</b>
+    <pre id="out">Ready.</pre>
+  </section>
 </div>
+
 <script>
-const token = document.querySelector('#token');
-const out = document.querySelector('#out');
+const $ = (s) => document.querySelector(s);
+const token = $('#token');
+const out = $('#out');
+const notice = $('#notice');
 token.value = localStorage.getItem('reuse_admin_token') || '';
-document.querySelector('#save').onclick = () => { localStorage.setItem('reuse_admin_token', token.value); out.textContent='token saved locally'; };
-async function health(){
-  const r=await fetch('/api/health'); const j=await r.json();
-  document.querySelector('#core').textContent=j.ok?'ONLINE':'ERROR';
-  document.querySelector('#discogs').textContent=j.connectors?.discogs?'SECRET READY':'SECRET MISSING';
-  document.querySelector('#ebay').textContent=j.connectors?.ebay?'SECRET READY':'承認待ち';
+
+function authHeaders(extra = {}) {
+  return { Authorization: 'Bearer ' + token.value, ...extra };
 }
-async function inventory(){
-  const r=await fetch('/api/inventory',{headers:{Authorization:'Bearer '+token.value}});
-  out.textContent=JSON.stringify(await r.json(),null,2);
+function yen(v) {
+  return v == null ? '—' : '¥' + Number(v).toLocaleString('ja-JP');
 }
-document.querySelector('#refresh').onclick=inventory;
-health().catch(e=>out.textContent=String(e));
+function log(value) {
+  out.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+}
+async function api(path, options = {}) {
+  const r = await fetch(path, { ...options, headers: authHeaders(options.headers || {}) });
+  const text = await r.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+  if (!r.ok) {
+    const error = new Error(data?.error || ('HTTP ' + r.status));
+    error.data = data;
+    throw error;
+  }
+  return data;
+}
+async function health() {
+  const r = await fetch('/api/health');
+  const j = await r.json();
+  $('#core').textContent = j.ok ? 'ONLINE' : 'ERROR';
+  $('#discogs').textContent = j.connectors?.discogs ? 'READY' : 'MISSING';
+  $('#ebay').textContent = j.connectors?.ebay ? 'READY' : '承認待ち';
+  $('#r2').textContent = j.bindings?.r2 ? 'READY' : 'PENDING';
+}
+async function summary() {
+  const j = await api('/api/dashboard');
+  const s = j.summary?.inventory || {};
+  $('#total').textContent = s.total || 0;
+  $('#available').textContent = s.available || 0;
+  $('#reserved').textContent = s.reserved || 0;
+  $('#sold').textContent = s.sold || 0;
+}
+async function inventory() {
+  const j = await api('/api/inventory');
+  const rows = j.items || [];
+  $('#inventory').innerHTML = rows.length ? rows.map(item => `
+    <tr>
+      <td><code>${escapeHtml(item.sku)}</code></td>
+      <td>${escapeHtml(item.product_name)}</td>
+      <td>${escapeHtml(item.category)}</td>
+      <td><span class="pill">${escapeHtml(item.status)}</span></td>
+      <td>${yen(item.price_jpy)}</td>
+      <td>${escapeHtml(item.location || '—')}</td>
+      <td>${item.quantity}</td>
+    </tr>`).join('') : '<tr><td colspan="7" class="muted">まだ在庫なし</td></tr>';
+  return j;
+}
+function escapeHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
+}
+async function refreshAll() {
+  notice.textContent = '';
+  try {
+    await health();
+    if (!token.value) {
+      log('ADMIN_TOKENを入力すると在庫管理を開始できます。');
+      return;
+    }
+    const [s, inv] = await Promise.all([summary(), inventory()]);
+    log({ ok: true, loaded: inv.items?.length || 0 });
+  } catch (e) {
+    log(e.data || String(e));
+  }
+}
+$('#save').onclick = () => {
+  localStorage.setItem('reuse_admin_token', token.value);
+  notice.textContent = 'この端末に保存しました';
+  refreshAll();
+};
+$('#reload').onclick = refreshAll;
+$('#add').onclick = async () => {
+  notice.className = 'muted';
+  notice.textContent = '';
+  const body = {
+    product_name: $('#name').value,
+    category: $('#category').value,
+    format: $('#format').value || null,
+    price_jpy: $('#price').value || null,
+    location: $('#location').value || null
+  };
+  try {
+    const j = await api('/api/inventory', {
+      method: 'POST',
+      headers: {'content-type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    notice.className = 'ok';
+    notice.textContent = '登録: ' + j.sku;
+    $('#name').value = '';
+    $('#price').value = '';
+    await Promise.all([summary(), inventory()]);
+    log(j);
+  } catch (e) {
+    notice.className = 'error';
+    notice.textContent = e.message;
+    log(e.data || String(e));
+  }
+};
+refreshAll();
 </script>
 </body>
 </html>
