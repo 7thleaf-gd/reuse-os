@@ -49,3 +49,29 @@ npx wrangler secret put DISCOGS_TOKEN
 Discogs stop endpoint is not exercised by CI or setup. Real Marketplace listing changes require an explicit runtime call after secret injection.
 
 The existing GAS implementation remains a temporary bridge only. Do not delete or migrate live data until the Cloudflare path has passed shadow E2E.
+
+
+## v0.1 inventory admin API
+
+Authenticated with `Authorization: Bearer <ADMIN_TOKEN>`.
+
+- `GET /api/dashboard` — inventory/listing summary
+- `GET /api/inventory` — latest 200 inventory rows
+- `POST /api/inventory` — create inventory item
+- `GET /api/inventory/:sku` — item detail with listings/media
+- `PATCH /api/inventory/:sku` — whitelist-only inventory update
+- `POST /api/inventory/:sku/listings` — register/update external listing metadata
+- `POST /api/inventory/:sku/media` — upload image when R2 is bound
+- `GET /api/connectors/discogs/identity` — read-only Discogs identity check
+- `POST /api/connectors/discogs/listings/:id/stop` — destructive stop/verify action
+
+The admin shell now supports inventory creation, inventory table readback, and summary counts. R2 remains optional/fail-closed until its binding is provisioned.
+
+### Validation and failure behavior
+
+- unknown inventory patch fields are rejected
+- duplicate SKU returns `409 SKU_EXISTS`
+- invalid/negative JPY values are rejected
+- media endpoints return `503 R2_NOT_CONFIGURED` when R2 is unavailable
+- only JPEG / PNG / WebP are accepted for media upload
+- Discogs destructive stop remains explicit and is never triggered by inventory CRUD
