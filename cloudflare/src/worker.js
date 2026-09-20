@@ -143,6 +143,47 @@ export function validateInventoryPatch(body) {
   return { ok: true, value: out };
 }
 
+export function validateSaleEvent(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return { ok: false, error: "invalid JSON body" };
+  }
+
+  const eventId = asTrimmedString(body.event_id);
+  const sku = asTrimmedString(body.sku);
+  const channel = asTrimmedString(body.channel).toUpperCase();
+
+  if (!eventId) return { ok: false, error: "event_id required" };
+  if (!/^[A-Za-z0-9._:-]{1,120}$/.test(eventId)) return { ok: false, error: "invalid event_id" };
+  if (!sku) return { ok: false, error: "sku required" };
+  if (!channel) return { ok: false, error: "channel required" };
+
+  const salePrice = asInteger(body.sale_price_jpy, "sale_price_jpy", { min: 0, nullable: true });
+  if (!salePrice.ok) return salePrice;
+
+  return {
+    ok: true,
+    value: {
+      event_id: eventId,
+      sku,
+      channel,
+      order_id: asOptionalString(body.order_id),
+      sale_price_jpy: salePrice.value,
+      final_state: asOptionalString(body.final_state) || "PAID",
+      note: asOptionalString(body.note)
+    }
+  };
+}
+
+export function nextInventoryAfterSale(quantity) {
+  const q = Math.max(0, Number(quantity || 0));
+  const nextQuantity = Math.max(0, q - 1);
+  return {
+    quantity: nextQuantity,
+    status: nextQuantity === 0 ? "SOLD" : "AVAILABLE",
+    sync_state: nextQuantity === 0 ? "STOP_PENDING" : "SYNC_PENDING"
+  };
+}
+
 export function discogsHeaders(env) {
   return {
     Authorization: `Discogs token=${env.DISCOGS_TOKEN || ""}`,
@@ -322,8 +363,94 @@ async function upsertChannelListing(request, env, sku) {
   return json({ ok: true, listing: item.listings.find((x) => x.channel === channel && x.external_id === externalId) || null }, existing ? 200 : 201);
 }
 
+async function listSaleEvents(env) {
+  const result = await env.DB.prepare(
+    `SELECT event_id,sku,channel,order_id,sale_price_jpy,final_state,note,detected_at,completed_at
+       FROM sale_events
+       ORDER BY detected_at DESC
+       LIMIT 200`
+  ).all();
+  return result.results || [];
+}
+
+async function recordSaleEvent(request, env) {
+  const parsed = validateSaleEvent(await request.json().catch(() => null));
+  if (!parsed.ok) return json({ ok: false, error: parsed.error }, 400);
+  const v = parsed.value;
+
+  const existingEvent = await env.DB.prepare(
+    "SELECT event_id,sku,channel,detected_at FROM sale_events WHERE event_id=? LIMIT 1"
+  ).bind(v.event_id).first();
+
+  if (existingEvent) {
+    return json({
+      ok: true,
+      idempotent: true,
+      event: existingEvent,
+      item: await inventoryDetail(env, existingEvent.sku)
+    });
+  }
+
+  const item = await env.DB.prepare(
+    "SELECT sku,quantity,status FROM inventory WHERE sku=? LIMIT 1"
+  ).bind(v.sku).first();
+
+  if (!item) return json({ ok: false, error: "SKU_NOT_FOUND" }, 404);
+  if (Number(item.quantity || 0) <= 0 || item.status === "SOLD") {
+    return json({ ok: false, error: "INVENTORY_ALREADY_SOLD", sku: v.sku }, 409);
+  }
+
+  const next = nextInventoryAfterSale(item.quantity);
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO sale_events
+       (event_id,sku,channel,order_id,sale_price_jpy,final_state,note)
+       VALUES (?,?,?,?,?,?,?)`
+    ).bind(
+      v.event_id, v.sku, v.channel, v.order_id,
+      v.sale_price_jpy, v.final_state, v.note
+    ),
+    env.DB.prepare(
+      `UPDATE inventory
+          SET quantity=?,status=?,sync_state=?,updated_at=CURRENT_TIMESTAMP
+        WHERE sku=?`
+    ).bind(next.quantity, next.status, next.sync_state, v.sku)
+  ]);
+
+  const stopTargets = next.sync_state === "STOP_PENDING"
+    ? await env.DB.prepare(
+        `SELECT channel,external_id,listing_status,listing_url
+           FROM channel_listings
+          WHERE sku=? AND listing_status='LISTED'
+          ORDER BY channel`
+      ).bind(v.sku).all()
+    : { results: [] };
+
+  return json({
+    ok: true,
+    idempotent: false,
+    event_id: v.event_id,
+    inventory: next,
+    stop_targets: stopTargets.results || [],
+    destructive_actions_executed: false
+  }, 201);
+}
+
+async function stopQueue(env) {
+  const result = await env.DB.prepare(
+    `SELECT
+        i.sku,i.product_name,i.status,i.sync_state,
+        l.channel,l.external_id,l.listing_status,l.listing_url
+       FROM inventory i
+       JOIN channel_listings l ON l.sku=i.sku
+      WHERE i.sync_state='STOP_PENDING' AND l.listing_status='LISTED'
+      ORDER BY i.updated_at ASC,l.channel ASC`
+  ).all();
+  return result.results || [];
+}
+
 async function dashboardSummary(env) {
-  const [inventory, listings] = await Promise.all([
+  const [inventory, listings, sync] = await Promise.all([
     env.DB.prepare(
       `SELECT
           COUNT(*) AS total,
@@ -337,12 +464,19 @@ async function dashboardSummary(env) {
        FROM channel_listings
        GROUP BY channel,listing_status
        ORDER BY channel,listing_status`
-    ).all()
+    ).all(),
+    env.DB.prepare(
+      `SELECT
+          SUM(CASE WHEN sync_state='STOP_PENDING' THEN 1 ELSE 0 END) AS stop_pending,
+          SUM(CASE WHEN sync_state='SYNC_PENDING' THEN 1 ELSE 0 END) AS sync_pending
+       FROM inventory`
+    ).first()
   ]);
 
   return {
     inventory: inventory || { total: 0, available: 0, reserved: 0, sold: 0 },
-    listings: listings.results || []
+    listings: listings.results || [],
+    sync: sync || { stop_pending: 0, sync_pending: 0 }
   };
 }
 
@@ -409,6 +543,18 @@ export default {
     if (pathname === "/api/dashboard" && request.method === "GET") {
       return json({ ok: true, summary: await dashboardSummary(env) });
     }
+    if (pathname === "/api/sales/events" && request.method === "GET") {
+      return json({ ok: true, events: await listSaleEvents(env) });
+    }
+
+    if (pathname === "/api/sales/events" && request.method === "POST") {
+      return recordSaleEvent(request, env);
+    }
+
+    if (pathname === "/api/stop-queue" && request.method === "GET") {
+      return json({ ok: true, items: await stopQueue(env), destructive_actions_executed: false });
+    }
+
 
     if (pathname === "/api/inventory" && request.method === "GET") {
       return json({ ok: true, items: await listInventory(env) });
