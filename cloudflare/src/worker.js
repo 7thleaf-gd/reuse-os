@@ -123,6 +123,22 @@ export default {
       });
     }
 
+    if (pathname === "/api/internal/discogs-probe" && request.method === "GET") {
+      const probe = request.headers.get("x-reuse-probe") || "";
+      if (!env.PROBE_TOKEN || probe !== env.PROBE_TOKEN) {
+        return json({ ok: false, error: "UNAUTHORIZED" }, 401);
+      }
+      const r = await discogsIdentity(env);
+      return json({
+        ok: r.ok,
+        status: r.status,
+        identity: r.ok ? {
+          id: r.body?.id ?? null,
+          username: r.body?.username ?? null
+        } : null
+      }, r.ok ? 200 : r.status || 502);
+    }
+
     if (pathname.startsWith("/api/")) {
       const auth = requireAdmin(request, env);
       if (!auth.ok) return auth.response;
