@@ -4,7 +4,9 @@ import {
   discogsHeaders,
   requireAdmin,
   validateInventoryCreate,
-  validateInventoryPatch
+  validateInventoryPatch,
+  validateSaleEvent,
+  nextInventoryAfterSale
 } from "../src/worker.js";
 
 test("Discogs auth header is built from secret without logging it", () => {
@@ -78,4 +80,33 @@ test("inventory patch rejects empty body", () => {
   const result = validateInventoryPatch({});
   assert.equal(result.ok, false);
   assert.equal(result.error, "no editable fields");
+});
+
+
+test("sale event validation requires stable id, sku and channel", () => {
+  const valid = validateSaleEvent({
+    event_id: "discogs:order-123",
+    sku: "AUDIO-1",
+    channel: "discogs",
+    sale_price_jpy: "1500"
+  });
+  assert.equal(valid.ok, true);
+  assert.equal(valid.value.channel, "DISCOGS");
+  assert.equal(valid.value.sale_price_jpy, 1500);
+
+  assert.equal(validateSaleEvent({ sku: "AUDIO-1", channel: "DISCOGS" }).ok, false);
+  assert.equal(validateSaleEvent({ event_id: "../bad", sku: "AUDIO-1", channel: "DISCOGS" }).ok, false);
+});
+
+test("sale state decrements stock without destructive action", () => {
+  assert.deepEqual(nextInventoryAfterSale(1), {
+    quantity: 0,
+    status: "SOLD",
+    sync_state: "STOP_PENDING"
+  });
+  assert.deepEqual(nextInventoryAfterSale(3), {
+    quantity: 2,
+    status: "AVAILABLE",
+    sync_state: "SYNC_PENDING"
+  });
 });
