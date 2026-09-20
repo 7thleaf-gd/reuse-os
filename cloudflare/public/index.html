@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Reuse OS Core</title>
+  <style>
+    :root{font-family:Inter,system-ui,sans-serif;color:#111;background:#f5f5f2}
+    body{margin:0}.wrap{max-width:980px;margin:auto;padding:28px}
+    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
+    h1{font-size:30px;margin:0}.tag{font:12px ui-monospace,monospace;border:1px solid #111;border-radius:999px;padding:6px 10px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+    .card{background:#fff;border:1px solid #ddd;border-radius:16px;padding:18px}
+    .card b{display:block;margin-bottom:8px}.muted{color:#666;font-size:13px}
+    input,button{font:inherit;padding:10px 12px;border:1px solid #bbb;border-radius:10px}
+    button{background:#111;color:#fff;cursor:pointer}.row{display:flex;gap:8px;flex-wrap:wrap}
+    pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#e8e8e8;padding:14px;border-radius:12px;min-height:80px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header><div><h1>Reuse OS Core</h1><div class="muted">Cloudflare Core v0 · D1 / R2 / Workers</div></div><span class="tag">ADMIN SHELL</span></header>
+  <section class="grid">
+    <div class="card"><b>Core</b><div id="core">未確認</div></div>
+    <div class="card"><b>Discogs</b><div id="discogs">未確認</div></div>
+    <div class="card"><b>eBay</b><div id="ebay">承認待ち</div></div>
+  </section>
+  <section class="card" style="margin-top:12px">
+    <b>Admin Token</b>
+    <div class="row"><input id="token" type="password" placeholder="Worker secret ADMIN_TOKEN"><button id="save">保存</button><button id="refresh">在庫を読む</button></div>
+    <div class="muted">v0はBearer token。商品化時はtenant auth / Cloudflare Accessへ置換する。</div>
+  </section>
+  <section class="card" style="margin-top:12px"><b>Inventory</b><pre id="out">Cloudflare Coreの配管確認用シェル。</pre></section>
+</div>
+<script>
+const token = document.querySelector('#token');
+const out = document.querySelector('#out');
+token.value = localStorage.getItem('reuse_admin_token') || '';
+document.querySelector('#save').onclick = () => { localStorage.setItem('reuse_admin_token', token.value); out.textContent='token saved locally'; };
+async function health(){
+  const r=await fetch('/api/health'); const j=await r.json();
+  document.querySelector('#core').textContent=j.ok?'ONLINE':'ERROR';
+  document.querySelector('#discogs').textContent=j.connectors?.discogs?'SECRET READY':'SECRET MISSING';
+  document.querySelector('#ebay').textContent=j.connectors?.ebay?'SECRET READY':'承認待ち';
+}
+async function inventory(){
+  const r=await fetch('/api/inventory',{headers:{Authorization:'Bearer '+token.value}});
+  out.textContent=JSON.stringify(await r.json(),null,2);
+}
+document.querySelector('#refresh').onclick=inventory;
+health().catch(e=>out.textContent=String(e));
+</script>
+</body>
+</html>
