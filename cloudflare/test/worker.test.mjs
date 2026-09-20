@@ -6,7 +6,8 @@ import {
   validateInventoryCreate,
   validateInventoryPatch,
   validateSaleEvent,
-  nextInventoryAfterSale
+  nextInventoryAfterSale,
+  normalizeListingStatus
 } from "../src/worker.js";
 
 test("Discogs auth header is built from secret without logging it", () => {
@@ -109,4 +110,12 @@ test("sale state decrements stock without destructive action", () => {
     status: "AVAILABLE",
     sync_state: "SYNC_PENDING"
   });
+});
+
+
+test("listing status normalizes marketplace variants", () => {
+  assert.deepEqual(normalizeListingStatus("For Sale"), { ok: true, value: "LISTED" });
+  assert.deepEqual(normalizeListingStatus("active"), { ok: true, value: "LISTED" });
+  assert.deepEqual(normalizeListingStatus("sold"), { ok: true, value: "SOLD" });
+  assert.equal(normalizeListingStatus("mystery").ok, false);
 });
