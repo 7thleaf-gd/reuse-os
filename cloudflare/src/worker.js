@@ -43,6 +43,14 @@ function asInteger(value, field, { min = null, nullable = false } = {}) {
 
 const INVENTORY_STATUSES = new Set(["AVAILABLE", "RESERVED", "SOLD"]);
 const INVENTORY_CATEGORIES = new Set(["MUSIC", "BOOK", "GAME", "INSTRUMENT", "CAMERA", "APPAREL", "OTHER"]);
+const LISTING_STATUSES = new Set(["LISTED", "DRAFT", "PAUSED", "SOLD", "ENDED", "ERROR"]);
+
+export function normalizeListingStatus(value) {
+  const raw = asTrimmedString(value || "LISTED").toUpperCase();
+  if (raw === "FOR SALE" || raw === "FOR_SALE" || raw === "ACTIVE") return { ok: true, value: "LISTED" };
+  if (!LISTING_STATUSES.has(raw)) return { ok: false, error: "invalid listing_status" };
+  return { ok: true, value: raw };
+}
 
 export function validateInventoryCreate(body) {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -329,7 +337,9 @@ async function upsertChannelListing(request, env, sku) {
     return json({ ok: false, error: "EXTERNAL_ID_IN_USE", sku: existing.sku }, 409);
   }
 
-  const status = asTrimmedString(body.listing_status || "LISTED").toUpperCase();
+  const normalizedStatus = normalizeListingStatus(body.listing_status);
+  if (!normalizedStatus.ok) return json({ ok: false, error: normalizedStatus.error }, 400);
+  const status = normalizedStatus.value;
   const price = asInteger(body.price_jpy, "price_jpy", { min: 0, nullable: true });
   if (!price.ok) return json({ ok: false, error: price.error }, 400);
   const quantity = asInteger(body.quantity == null ? 1 : body.quantity, "quantity", { min: 0 });
