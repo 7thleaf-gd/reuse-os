@@ -7,7 +7,8 @@ import {
   validateInventoryPatch,
   validateSaleEvent,
   nextInventoryAfterSale,
-  normalizeListingStatus
+  normalizeListingStatus,
+  shouldClearStopPending
 } from "../src/worker.js";
 
 test("Discogs auth header is built from secret without logging it", () => {
@@ -118,4 +119,12 @@ test("listing status normalizes marketplace variants", () => {
   assert.deepEqual(normalizeListingStatus("active"), { ok: true, value: "LISTED" });
   assert.deepEqual(normalizeListingStatus("sold"), { ok: true, value: "SOLD" });
   assert.equal(normalizeListingStatus("mystery").ok, false);
+});
+
+
+test("stop queue clears only when sold item has no listed channels left", () => {
+  assert.equal(shouldClearStopPending("SOLD", "STOP_PENDING", 0), true);
+  assert.equal(shouldClearStopPending("SOLD", "STOP_PENDING", 1), false);
+  assert.equal(shouldClearStopPending("AVAILABLE", "STOP_PENDING", 0), false);
+  assert.equal(shouldClearStopPending("SOLD", "SYNCED", 0), false);
 });
