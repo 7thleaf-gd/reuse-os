@@ -315,20 +315,22 @@ async function patchInventory(request, env, sku) {
   return json({ ok: true, item: await inventoryDetail(env, sku) });
 }
 
+export function shouldClearStopPending(status, syncState, listedCount) {
+  return status === "SOLD" && syncState === "STOP_PENDING" && Number(listedCount || 0) === 0;
+}
+
 async function refreshStopPending(env, sku) {
   const item = await env.DB.prepare(
     "SELECT status,sync_state FROM inventory WHERE sku=? LIMIT 1"
   ).bind(sku).first();
 
-  if (!item || item.status !== "SOLD" || item.sync_state !== "STOP_PENDING") {
-    return false;
-  }
+  if (!item) return false;
 
   const row = await env.DB.prepare(
     "SELECT COUNT(*) AS count FROM channel_listings WHERE sku=? AND listing_status='LISTED'"
   ).bind(sku).first();
 
-  if (Number(row?.count || 0) > 0) return false;
+  if (!shouldClearStopPending(item.status, item.sync_state, row?.count)) return false;
 
   await env.DB.prepare(
     "UPDATE inventory SET sync_state='SYNCED',updated_at=CURRENT_TIMESTAMP WHERE sku=?"
