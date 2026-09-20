@@ -35,6 +35,12 @@ const CHANNEL_POLICY = {
     categoryRestriction: null,
     note: '公式APIが個人セラーにも開放されている。中古メディア全般OK。出品停止(withdrawOffer)・売却検知(Platform Notifications)とも公式に確認済み'
   },
+  DISCOGS: {
+    label: 'Discogs',
+    mode: 'api',
+    categoryRestriction: null,
+    note: '公式Marketplace API。自分のSellerアカウントはPersonal Access Tokenで操作可能。中古音源の販売口として利用し、他販路で売れた場合はMarketplace listingをAPIで停止する'
+  },
   ETSY: {
     label: 'Etsy',
     mode: 'api_vintage_gated', // 公式APIはあるが、出品ポリシー上「ヴィンテージ品のみ」

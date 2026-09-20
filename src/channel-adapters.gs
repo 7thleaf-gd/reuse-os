@@ -155,6 +155,102 @@ const EbayAdapter = {
 };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Discogs Marketplace Adapter
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/**
+ * Discogsは自分のSellerアカウントをPersonal Access Tokenで操作する。
+ * externalId = Discogs Marketplace listing ID。
+ *
+ * SOLD同期時は listing をDELETEする。これは不可逆だが、在庫が他販路で売れた後に
+ * 「まだ買える状態」を残さないことを優先するためのfail-closed設計。
+ * 注文キャンセル時に元listingへ戻す自動処理は未実装なので、必要なら新規listingを作る。
+ */
+const DiscogsAdapter = {
+  channel: 'DISCOGS',
+  label: 'Discogs',
+  mode: 'api',
+
+  isConfigured: function () {
+    if (!CONFIG.DISCOGS_TOKEN) {
+      return { ok: false, reason: 'CONFIG未設定: DISCOGS_TOKEN' };
+    }
+    return { ok: true, reason: '' };
+  },
+
+  headers_: function () {
+    return {
+      Authorization: 'Discogs token=' + CONFIG.DISCOGS_TOKEN,
+      'User-Agent': '7thleaf-ReuseOS/0.1 +https://github.com/7thleaf-gd/reuse-os'
+    };
+  },
+
+  buildStopSteps: function (externalId) {
+    return [{
+      name: 'deleteListing',
+      request: {
+        url: 'https://api.discogs.com/marketplace/listings/' + encodeURIComponent(externalId),
+        method: 'delete',
+        headers: this.headers_(),
+        muteHttpExceptions: true
+      }
+    }];
+  },
+
+  interpretStop: function (stepName, code, body) {
+    if (code >= 200 && code < 300) {
+      return { success: true, note: 'Discogs listing削除成功（Marketplaceから停止）' };
+    }
+    // 既に存在しないlistingは購入不能なので、停止操作としては冪等成功扱い。
+    if (code === 404) {
+      return { success: true, note: 'Discogs listingは既に存在しません（HTTP404 / 購入不能）' };
+    }
+    return {
+      success: false,
+      note: 'Discogs listing削除失敗 HTTP' + code + '：' + String(body || '').substring(0, 150)
+    };
+  },
+
+  buildVerifyRequest: function (externalId) {
+    return {
+      url: 'https://api.discogs.com/marketplace/listings/' + encodeURIComponent(externalId),
+      method: 'get',
+      headers: this.headers_(),
+      muteHttpExceptions: true
+    };
+  },
+
+  interpretVerify: function (code, body) {
+    // DELETE成功後に404なら、Marketplace上にlistingが無いことを確認できた。
+    if (code === 404) {
+      return { verified: true, note: 'GET listing=404。Marketplaceから消えていることを確認' };
+    }
+    if (code < 200 || code >= 300) {
+      return { verified: null, note: 'Discogs listing確認失敗 HTTP' + code + '（判定不能）' };
+    }
+
+    let json;
+    try {
+      json = JSON.parse(body);
+    } catch (e) {
+      return { verified: null, note: 'Discogs listingレスポンスのJSON解析に失敗（判定不能）' };
+    }
+
+    const status = json && json.status ? String(json.status) : '';
+    if (!status) {
+      return { verified: null, note: 'Discogs listingにstatusが無く判定不能' };
+    }
+    if (status === 'For Sale') {
+      return { verified: false, note: 'status=For Sale（まだ購入可能。二重販売リスクあり）' };
+    }
+    if (status === 'Draft' || status === 'Expired' || status === 'Sold') {
+      return { verified: true, note: 'status=' + status + '（購入不可）' };
+    }
+    return { verified: null, note: '未知のDiscogs status=' + status + '（成功に丸めない）' };
+  }
+};
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Etsy Adapter
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -517,6 +613,7 @@ const YahooAuctionManualAdapter = makeManualAdapter_(
 
 const CHANNEL_ADAPTERS = {
   EBAY: EbayAdapter,
+  DISCOGS: DiscogsAdapter,
   ETSY: EtsyAdapter,
   MERCARI_SHOPS: MercariShopsAdapter,
   YAHOO_SHOPPING: YahooShoppingAdapter,
