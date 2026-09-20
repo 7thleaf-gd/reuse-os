@@ -75,3 +75,17 @@ The admin shell now supports inventory creation, inventory table readback, and s
 - media endpoints return `503 R2_NOT_CONFIGURED` when R2 is unavailable
 - only JPEG / PNG / WebP are accepted for media upload
 - Discogs destructive stop remains explicit and is never triggered by inventory CRUD
+
+
+## Sale event state machine
+
+Cloudflare Core now accepts idempotent sale events without performing destructive marketplace writes.
+
+- `POST /api/sales/events` — record one sale event
+- `GET /api/sales/events` — recent sale events
+- `GET /api/stop-queue` — listings that must be stopped on other channels
+
+When the last unit sells, inventory becomes `SOLD` with `sync_state=STOP_PENDING`.
+When stock remains, inventory stays `AVAILABLE` with `sync_state=SYNC_PENDING`.
+
+The response includes `destructive_actions_executed:false`. Actual marketplace stop calls remain a separate explicit executor boundary.
