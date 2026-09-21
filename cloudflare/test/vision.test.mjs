@@ -31,12 +31,12 @@ test("Vision normalization keeps best guesses, entities, OCR and logos", () => {
   assert.equal(result.matching_pages[0].url, "https://example.test/page");
 });
 
-test("Vision query suggestion prefers best guess, then entities, then OCR", () => {
+test("Vision query suggestion prefers combined identity signals", () => {
   assert.equal(
     suggestVisionQuery({
       best_guess_labels: ["Artist Album"],
-      web_entities: [{ description: "Ignored", score: 1 }],
-      ocr_lines: ["Ignored OCR"]
+      web_entities: [{ description: "Artist", score: 1 }],
+      ocr_lines: ["Artist", "Album"]
     }),
     "Artist Album"
   );
