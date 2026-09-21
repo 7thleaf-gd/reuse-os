@@ -7,6 +7,11 @@ import {
   disconnectEbay,
   importEbaySandboxToken
 } from "./ebay.js";
+import {
+  saveVisionConfig,
+  visionStatus,
+  analyzeHunterImage
+} from "./vision.js";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 
@@ -1034,7 +1039,7 @@ export default {
         service: "reuse-os-core-v0",
         version: "0.2.0",
         bindings: { d1: !!env.DB, r2: !!env.MEDIA },
-        connectors: { discogs: !!env.DISCOGS_TOKEN, ebay: true },
+        connectors: { discogs: !!env.DISCOGS_TOKEN, ebay: true, vision_secret: !!env.GOOGLE_VISION_API_KEY },
         admin: { configured: !!env.ADMIN_TOKEN }
       });
     }
@@ -1050,6 +1055,18 @@ export default {
     if (pathname === "/api/dashboard" && request.method === "GET") {
       return json({ ok: true, summary: await dashboardSummary(env) });
     }
+    if (pathname === "/api/connectors/vision/config" && request.method === "POST") {
+      return saveVisionConfig(request, env);
+    }
+
+    if (pathname === "/api/connectors/vision/status" && request.method === "GET") {
+      return visionStatus(request, env);
+    }
+
+    if (pathname === "/api/hunter/vision" && request.method === "POST") {
+      return analyzeHunterImage(request, env);
+    }
+
     if (pathname === "/api/hunter/search" && request.method === "POST") {
       const body = await request.json().catch(() => null);
       const r = await hunterSearchDiscogs(env, body?.query);

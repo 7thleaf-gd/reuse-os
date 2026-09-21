@@ -50,16 +50,27 @@
 
   <section class="card" style="margin-top:12px">
     <div class="row" style="justify-content:space-between;align-items:center">
-      <b style="margin:0">Hunter Mode <span class="pill">v0.1</span></b>
-      <span class="muted">Discogs catalog</span>
+      <b style="margin:0">Hunter Mode <span class="pill">v0.2</span></b>
+      <span id="visionState" class="pill">Vision確認中</span>
     </div>
-    <div class="muted" style="margin:8px 0 10px">店頭でバーコード / アーティスト / タイトルを入れて候補検索 → 相場確認 → 仕入れ判断 → そのまま在庫へ。</div>
+    <div class="muted" style="margin:8px 0 10px">ジャケ撮影 / バーコード / アーティスト / タイトル → 候補特定 → Discogs相場 → 仕入れ判断 → 在庫へ。eBay相場は認証復旧後に横並び追加。</div>
     <div class="row">
       <input id="hunterQuery" class="grow" placeholder="バーコード / アーティスト / タイトル" enterkeyhint="search">
       <button id="hunterSearch">探す</button>
-      <button id="hunterCamera" class="ghost">📷 バーコード</button>
+      <button id="hunterVisionCamera" class="ghost">📸 ジャケ</button>
+      <button id="hunterCamera" class="ghost">▦ バーコード</button>
+      <input id="hunterVisionPhoto" type="file" accept="image/*" capture="environment" style="display:none">
       <input id="hunterPhoto" type="file" accept="image/*" capture="environment" style="display:none">
     </div>
+    <div id="hunterVisionResult" class="muted" style="display:none;margin-top:8px"></div>
+    <details id="visionSetup" style="margin-top:10px">
+      <summary style="cursor:pointer;font-weight:700">Google Vision設定</summary>
+      <div class="muted" style="margin:8px 0">Cloud Vision APIキーを暗号化してD1へ保存。Worker Secretがある場合はそちらを優先します。キー値は再表示しません。</div>
+      <div class="row">
+        <input id="visionApiKey" class="grow" type="password" autocomplete="off" placeholder="Google Cloud Vision API key">
+        <button id="visionSave" class="ghost">Vision設定保存</button>
+      </div>
+    </details>
     <div id="hunterNotice" class="muted" style="margin-top:8px"></div>
     <div id="hunterResults" style="display:grid;gap:8px;margin-top:10px"></div>
 
@@ -341,6 +352,78 @@ function updateHunterMargin() {
     : '売価を入れると参考粗利を表示';
 }
 
+async function visionStatus() {
+  const j = await api('/api/connectors/vision/status');
+  $('#visionState').textContent = j.configured ? 'Vision READY' : 'Vision未設定';
+  $('#visionState').className = 'pill';
+  if (j.configured) {
+    $('#visionSetup').open = false;
+  }
+  return j;
+}
+
+async function resizeHunterImage(file) {
+  const bitmap = await createImageBitmap(file);
+  const maxSide = 1600;
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  if (typeof bitmap.close === 'function') bitmap.close();
+  return await new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('画像変換に失敗')), 'image/jpeg', 0.82);
+  });
+}
+
+async function runHunterVision(file) {
+  const notice = $('#hunterNotice');
+  const resultBox = $('#hunterVisionResult');
+  notice.className = 'muted';
+  notice.textContent = 'ジャケット画像をGoogle Visionで解析中…';
+  resultBox.style.display = 'none';
+  try {
+    const blob = await resizeHunterImage(file);
+    const j = await api('/api/hunter/vision', {
+      method: 'POST',
+      headers: {'content-type':'image/jpeg'},
+      body: blob
+    });
+    const v = j.vision || {};
+    const guess = j.suggested_query || '';
+    const ocr = (v.ocr_lines || []).slice(0, 4).join(' / ');
+    const entities = (v.web_entities || []).slice(0, 4).map(x => x.description).join(' / ');
+    resultBox.style.display = 'block';
+    resultBox.textContent = [
+      guess ? '候補: ' + guess : null,
+      entities ? 'Web: ' + entities : null,
+      ocr ? 'OCR: ' + ocr : null
+    ].filter(Boolean).join('｜') || '画像は読めましたが検索語を作れませんでした。';
+    if (guess) {
+      $('#hunterQuery').value = guess;
+      notice.className = 'ok';
+      notice.textContent = '画像認識OK。Discogs候補を検索します…';
+      await runHunterSearch();
+    } else {
+      notice.className = 'muted';
+      notice.textContent = '画像認識は完了。検索語を手で補ってください。';
+    }
+    log({ suggested_query:guess || null, vision:v });
+  } catch (e) {
+    notice.className = 'error';
+    if (e?.data?.error === 'VISION_NOT_CONFIGURED') {
+      notice.textContent = 'Google Vision未設定。下の「Google Vision設定」にAPIキーを入れてください。';
+      $('#visionSetup').open = true;
+    } else {
+      notice.textContent = e?.data?.provider_error || e.message || '画像認識エラー';
+    }
+    log(e.data || String(e));
+  }
+}
+
 async function ebayStatus() {
   const j = await api('/api/connectors/ebay/oauth/status');
   $('#ebay').textContent = j.connected ? 'CONNECTED' : (j.configured ? 'READY TO AUTH' : '未設定');
@@ -389,8 +472,8 @@ async function refreshAll() {
       log('ADMIN_TOKENを入力すると在庫管理を開始できます。');
       return;
     }
-    const [s, inv, eb, dg] = await Promise.all([summary(), inventory(), ebayStatus(), discogsStatus()]);
-    log({ ok: true, loaded: inv.items?.length || 0, ebay_connected: !!eb.connected, discogs_connected: !!dg.ok });
+    const [s, inv, eb, dg, vs] = await Promise.all([summary(), inventory(), ebayStatus(), discogsStatus(), visionStatus()]);
+    log({ ok: true, loaded: inv.items?.length || 0, ebay_connected: !!eb.connected, discogs_connected: !!dg.ok, vision_configured: !!vs.configured });
   } catch (e) {
     log(e.data || String(e));
   }
@@ -443,6 +526,45 @@ function showDiscogsError(error) {
   }
   log(error?.data || String(error));
 }
+
+$('#visionSave').onclick = async () => {
+  const notice = $('#hunterNotice');
+  const apiKey = $('#visionApiKey').value.trim();
+  if (!apiKey) {
+    notice.className = 'error';
+    notice.textContent = 'Vision APIキーを入れてください。';
+    return;
+  }
+  notice.className = 'muted';
+  notice.textContent = 'Vision設定を暗号化保存中…';
+  try {
+    const j = await api('/api/connectors/vision/config', {
+      method: 'POST',
+      headers: {'content-type':'application/json'},
+      body: JSON.stringify({ api_key: apiKey })
+    });
+    $('#visionApiKey').value = '';
+    notice.className = 'ok';
+    notice.textContent = 'Google Vision設定完了。';
+    await visionStatus();
+    log({ ok:j.ok, configured:j.configured, source:j.source });
+  } catch (e) {
+    notice.className = 'error';
+    notice.textContent = e.message;
+    log(e.data || String(e));
+  }
+};
+
+$('#hunterVisionCamera').onclick = () => $('#hunterVisionPhoto').click();
+$('#hunterVisionPhoto').onchange = async () => {
+  const file = $('#hunterVisionPhoto').files?.[0];
+  if (!file) return;
+  try {
+    await runHunterVision(file);
+  } finally {
+    $('#hunterVisionPhoto').value = '';
+  }
+};
 
 $('#hunterSearch').onclick = runHunterSearch;
 $('#hunterQuery').addEventListener('keydown', (e) => {
