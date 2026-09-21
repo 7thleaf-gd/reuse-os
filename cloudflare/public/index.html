@@ -60,7 +60,7 @@
       </select>
       <input id="ebayClientId" class="wide" placeholder="App ID / Client ID">
       <input id="ebayClientSecret" type="password" autocomplete="off" placeholder="Cert ID / Client Secret">
-      <input id="ebayRuname" placeholder="RuName">
+      <input id="ebayRuname" placeholder="eBay Redirect URL name">
       <button id="ebaySave">設定保存</button>
     </div>
     <div class="muted" style="margin-top:10px">Auth Accepted URL: <code id="ebayCallback">読込後に表示</code></div>
@@ -166,7 +166,7 @@ async function ebayStatus() {
   $('#ebayEnv').value = j.environment || 'sandbox';
   $('#ebayNotice').textContent = j.connected
     ? 'OAuth接続済み。アクセストークンは必要時に自動更新します。'
-    : (j.configured ? 'eBay側のAuth Accepted URLを上記URLに設定して「eBayと接続」を押してください。' : 'App ID / Cert ID / RuNameを保存してください。');
+    : (j.configured ? 'eBay側のAuth Accepted URLを上記URLに設定して「eBayと接続」を押してください。' : 'App ID / Cert ID / eBay Redirect URL nameを保存してください。');
   return j;
 }
 async function summary() {
