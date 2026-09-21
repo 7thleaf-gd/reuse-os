@@ -577,9 +577,9 @@ export default {
       return json({
         ok: true,
         service: "reuse-os-core-v0",
-        version: "0.1.0",
+        version: "0.2.0",
         bindings: { d1: !!env.DB, r2: !!env.MEDIA },
-        connectors: { discogs: !!env.DISCOGS_TOKEN, ebay: !!env.EBAY_CLIENT_ID },
+        connectors: { discogs: !!env.DISCOGS_TOKEN, ebay: true },
         admin: { configured: !!env.ADMIN_TOKEN }
       });
     }
