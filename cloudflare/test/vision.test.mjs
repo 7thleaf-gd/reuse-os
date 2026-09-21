@@ -50,7 +50,7 @@ test("Vision query suggestion prefers OCR identity and catalog numbers", () => {
       ],
       ocr_lines: []
     }),
-    "Artist Album"
+    null
   );
 
   assert.equal(
@@ -112,4 +112,25 @@ test("Vision rejects generic art semantics when OCR identifies the record", () =
   assert.equal(candidates[0], "Pampas field ass kickers");
   assert.ok(candidates.some((q) => /Pampas field ass kickers Salik/i.test(q)));
   assert.ok(!candidates.some((q) => /Painting Technique|Acrylic Painting/i.test(q)));
+});
+
+
+test("Vision returns no search candidate for generic painting semantics without OCR", () => {
+  const candidates = buildVisionQueryCandidates({
+    best_guess_labels: ["painting"],
+    web_entities: [
+      { description: "Art", score: 0.99 },
+      { description: "Painting", score: 0.98 }
+    ],
+    ocr_lines: [],
+    matching_pages: []
+  });
+
+  assert.deepEqual(candidates, []);
+  assert.equal(suggestVisionQuery({
+    best_guess_labels: ["painting"],
+    web_entities: [{ description: "Art", score: 0.99 }],
+    ocr_lines: [],
+    matching_pages: []
+  }), null);
 });

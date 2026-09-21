@@ -392,9 +392,8 @@ async function runHunterVision(file) {
     resultBox.style.display = 'block';
     resultBox.textContent = [
       guess ? '第一候補: ' + guess : null,
-      entities ? 'Web: ' + entities : null,
       ocr ? 'OCR: ' + ocr : null
-    ].filter(Boolean).join('｜') || '画像は読めましたが検索語を作れませんでした。';
+    ].filter(Boolean).join('｜') || '画像は読めましたが、作品特定に使える文字・型番は取れませんでした。';
 
     const qbox = $('#hunterVisionQueries');
     if (queries.length) {
@@ -409,7 +408,7 @@ async function runHunterVision(file) {
       qbox.style.display = 'none';
       qbox.innerHTML = '';
       notice.className = 'muted';
-      notice.textContent = '画像認識は完了。検索語を手で補ってください。';
+      notice.textContent = '表ジャケだけでは作品を特定できません。裏面・帯・背表紙・バーコードを撮ってください。';
     }
     log({ suggested_query:guess || null, candidate_queries:queries, vision:v });
   } catch (e) {
