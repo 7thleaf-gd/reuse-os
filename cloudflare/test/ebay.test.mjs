@@ -7,7 +7,8 @@ import {
   decryptEbayPayload,
   signEbayState,
   verifyEbayState,
-  classifyEbayCallback
+  classifyEbayCallback,
+  verifyStoredEbayState
 } from "../src/ebay.js";
 
 test("eBay scopes cover listing, account policies and fulfillment without buy/PII scopes", () => {
@@ -84,4 +85,15 @@ test("callback classifier reports a missing query without exposing values", () =
   assert.equal(result.ok, false);
   assert.equal(result.type, "missing");
   assert.deepEqual(result.keys, []);
+});
+
+
+test("server-stored OAuth state accepts exact fresh UUID and rejects mismatch/expiry", () => {
+  const now = 1_800_000_000_000;
+  const record = { pending_oauth: { state: "abc-123", created_at: now } };
+
+  assert.deepEqual(verifyStoredEbayState(record, "abc-123", now + 30_000), { ok: true });
+  assert.equal(verifyStoredEbayState(record, "wrong", now + 30_000).error, "INVALID_STATE");
+  assert.equal(verifyStoredEbayState(record, "abc-123", now + 11 * 60_000).error, "STATE_EXPIRED");
+  assert.equal(verifyStoredEbayState({}, "abc-123", now).error, "OAUTH_STATE_NOT_STARTED");
 });
