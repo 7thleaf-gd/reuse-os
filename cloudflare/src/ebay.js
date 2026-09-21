@@ -288,22 +288,62 @@ function callbackHtml(result) {
   );
 }
 
+export function classifyEbayCallback(urlLike) {
+  const url = urlLike instanceof URL ? urlLike : new URL(String(urlLike));
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const denied = url.searchParams.get("error");
+
+  if (denied) {
+    return {
+      ok: false,
+      type: "denied",
+      error: url.searchParams.get("error_description") || denied,
+      code,
+      state
+    };
+  }
+
+  if (code && state) return { ok: true, type: "oauth", code, state };
+
+  const keys = [...new Set([...url.searchParams.keys()])].sort();
+  const legacy = keys.some((key) => [
+    "isAuthSuccessful",
+    "ebaytkn",
+    "tkn",
+    "username"
+  ].includes(key));
+
+  return {
+    ok: false,
+    type: legacy ? "legacy_authnauth" : "missing",
+    error: legacy ? "LEGACY_AUTHNAUTH_CALLBACK" : "OAUTH_CODE_OR_STATE_MISSING",
+    keys
+  };
+}
+
 export async function ebayOAuthCallback(request, env) {
   if (!connectorDbReady(env)) return callbackHtml({ ok: false, error: "D1_NOT_CONFIGURED" });
   if (!env.ADMIN_TOKEN) return callbackHtml({ ok: false, error: "ADMIN_TOKEN_NOT_CONFIGURED" });
 
   const url = new URL(request.url);
-  const denied = url.searchParams.get("error");
-  if (denied) {
-    return callbackHtml({
-      ok: false,
-      error: url.searchParams.get("error_description") || denied
-    });
+  const callback = classifyEbayCallback(url);
+
+  if (!callback.ok) {
+    if (callback.type === "denied") return callbackHtml({ ok: false, error: callback.error });
+
+    const suffix = callback.keys && callback.keys.length
+      ? " (received: " + callback.keys.join(", ") + ")"
+      : "";
+
+    const note = callback.type === "legacy_authnauth"
+      ? "旧Auth'n'Authの戻り値を受信しました。eBay DevelopersでOAuth (new security)を選択・保存後、Reuse OSの「eBayと接続」からやり直してください。" + suffix
+      : "OAuth code/stateがありません。このURLを直接開かず、Reuse OSの「eBayと接続」から認可を開始してください。" + suffix;
+
+    return callbackHtml({ ok: false, error: note });
   }
 
-  const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
-  if (!code || !state) return callbackHtml({ ok: false, error: "OAUTH_CODE_OR_STATE_MISSING" });
+  const { code, state } = callback;
 
   const stateCheck = await verifyEbayState(state, env.ADMIN_TOKEN);
   if (!stateCheck.ok) return callbackHtml(stateCheck);
