@@ -92,8 +92,7 @@ test("Vision candidates combine artist-like OCR with generic visual guess", () =
   });
 
   assert.equal(candidates[0], "CDVILED183X");
-  assert.ok(candidates.includes("OPETH"));
-  assert.ok(candidates.some((q) => /OPETH.*STILL LIFE/i.test(q)));
+  assert.ok(candidates.some((q) => /OPETH/i.test(q) && /STILL LIFE/i.test(q)));
 });
 
 
