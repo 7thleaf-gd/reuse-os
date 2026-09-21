@@ -225,6 +225,260 @@ export async function discogsIdentity(env) {
   return discogsRequest(env, "/oauth/identity");
 }
 
+export function normalizeDiscogsListing(listing) {
+  const release = listing?.release || {};
+  const price = listing?.price || {};
+  const quantityRaw = Number(listing?.quantity ?? 1);
+  const quantity = Number.isInteger(quantityRaw) && quantityRaw > 0 ? quantityRaw : 1;
+  const format = Array.isArray(release?.format)
+    ? release.format.join(", ")
+    : (release?.format || null);
+
+  return {
+    listing_id: listing?.id == null ? null : String(listing.id),
+    release_id: release?.id == null ? null : String(release.id),
+    external_id: listing?.external_id == null ? null : String(listing.external_id),
+    title: release?.description || release?.title || listing?.title || null,
+    format,
+    media_condition: listing?.condition || null,
+    sleeve_condition: listing?.sleeve_condition || null,
+    price: Number.isFinite(Number(price?.value)) ? Number(price.value) : null,
+    currency: price?.currency || null,
+    quantity,
+    status: listing?.status || null,
+    location: listing?.location || null,
+    comments: listing?.comments || null,
+    uri: listing?.uri || null
+  };
+}
+
+export async function discogsForSale(env, { page = 1, perPage = 50 } = {}) {
+  const identity = await discogsIdentity(env);
+  if (!identity.ok) return identity;
+
+  const username = identity.body?.username;
+  if (!username) return { ok: false, status: 502, error: "DISCOGS_IDENTITY_USERNAME_MISSING" };
+
+  const safePage = Math.max(1, Math.min(10000, Number(page) || 1));
+  const safePerPage = Math.max(1, Math.min(100, Number(perPage) || 50));
+  const path = `/users/${encodeURIComponent(username)}/inventory?status=For%20Sale&page=${safePage}&per_page=${safePerPage}`;
+  const result = await discogsRequest(env, path);
+
+  if (!result.ok) return result;
+
+  const listings = Array.isArray(result.body?.listings)
+    ? result.body.listings.map(normalizeDiscogsListing)
+    : [];
+
+  return {
+    ok: true,
+    status: result.status,
+    body: {
+      username,
+      pagination: result.body?.pagination || null,
+      listings
+    }
+  };
+}
+
+function discogsSku(listing) {
+  const external = asTrimmedString(listing?.external_id);
+  if (external && /^[A-Za-z0-9._:-]{1,80}$/.test(external)) return external;
+  return listing?.listing_id ? `DISC-${listing.listing_id}` : null;
+}
+
+export function discogsImportPlan(listing) {
+  const sku = discogsSku(listing);
+  const title = asTrimmedString(listing?.title);
+  const listingId = asTrimmedString(listing?.listing_id);
+
+  if (!sku) return { ok: false, error: "DISCOGS_LISTING_ID_MISSING" };
+  if (!listingId) return { ok: false, error: "DISCOGS_LISTING_ID_MISSING" };
+  if (!title) return { ok: false, error: "DISCOGS_TITLE_MISSING", listing_id: listingId };
+
+  const currency = asTrimmedString(listing?.currency).toUpperCase();
+  const priceJpy = currency === "JPY" && Number.isFinite(Number(listing?.price))
+    ? Math.max(0, Math.round(Number(listing.price)))
+    : null;
+  const quantityRaw = Number(listing?.quantity ?? 1);
+  const quantity = Number.isInteger(quantityRaw) && quantityRaw > 0 ? quantityRaw : 1;
+  const normalizedStatus = normalizeListingStatus(listing?.status);
+  const listingStatus = normalizedStatus.ok ? normalizedStatus.value : "ERROR";
+
+  return {
+    ok: true,
+    value: {
+      sku,
+      inventory: {
+        category: "MUSIC",
+        product_name: title,
+        format: asOptionalString(listing?.format),
+        media_condition: asOptionalString(listing?.media_condition),
+        sleeve_condition: asOptionalString(listing?.sleeve_condition),
+        price_jpy: priceJpy,
+        location: asOptionalString(listing?.location),
+        quantity
+      },
+      channel: {
+        channel: "DISCOGS",
+        external_id: listingId,
+        listing_status: listingStatus,
+        listing_url: asOptionalString(listing?.uri),
+        price_jpy: priceJpy,
+        quantity,
+        last_note: [
+          listing?.release_id ? `release_id=${listing.release_id}` : null,
+          currency && currency !== "JPY" ? `source_currency=${currency}` : null,
+          listing?.comments ? `comments=${String(listing.comments).slice(0, 160)}` : null
+        ].filter(Boolean).join(" | ") || null
+      }
+    }
+  };
+}
+
+async function syncDiscogsForSale(env, { maxPages = 20, perPage = 100, apply = false } = {}) {
+  const safeMaxPages = Math.max(1, Math.min(20, Number(maxPages) || 20));
+  const safePerPage = Math.max(1, Math.min(100, Number(perPage) || 100));
+
+  const first = await discogsForSale(env, { page: 1, perPage: safePerPage });
+  if (!first.ok) return first;
+
+  const pages = Math.max(1, Math.min(
+    safeMaxPages,
+    Number(first.body?.pagination?.pages || 1) || 1
+  ));
+  const all = [...(first.body?.listings || [])];
+
+  for (let page = 2; page <= pages; page += 1) {
+    const next = await discogsForSale(env, { page, perPage: safePerPage });
+    if (!next.ok) return next;
+    all.push(...(next.body?.listings || []));
+  }
+
+  const plans = all.map(discogsImportPlan);
+  const invalid = plans.filter((plan) => !plan.ok);
+  const valid = plans.filter((plan) => plan.ok).map((plan) => plan.value);
+
+  if (!apply) {
+    return {
+      ok: true,
+      status: 200,
+      body: {
+        mode: "dry-run",
+        username: first.body?.username || null,
+        pages_read: pages,
+        listings_seen: all.length,
+        valid: valid.length,
+        invalid: invalid.length,
+        plans: valid.map((plan) => ({
+          sku: plan.sku,
+          product_name: plan.inventory.product_name,
+          external_id: plan.channel.external_id,
+          listing_status: plan.channel.listing_status,
+          price_jpy: plan.channel.price_jpy,
+          quantity: plan.channel.quantity
+        })),
+        errors: invalid
+      }
+    };
+  }
+
+  let created = 0;
+  let linked = 0;
+  let updated = 0;
+  const conflicts = [];
+
+  for (const plan of valid) {
+    const existingListing = await env.DB.prepare(
+      "SELECT id,sku FROM channel_listings WHERE channel='DISCOGS' AND external_id=? LIMIT 1"
+    ).bind(plan.channel.external_id).first();
+
+    if (existingListing) {
+      await env.DB.prepare(
+        `UPDATE channel_listings
+            SET listing_status=?,listing_url=?,price_jpy=?,quantity=?,last_note=?,last_synced_at=CURRENT_TIMESTAMP
+          WHERE id=?`
+      ).bind(
+        plan.channel.listing_status,
+        plan.channel.listing_url,
+        plan.channel.price_jpy,
+        plan.channel.quantity,
+        plan.channel.last_note,
+        existingListing.id
+      ).run();
+      updated += 1;
+      continue;
+    }
+
+    let item = await env.DB.prepare(
+      "SELECT sku FROM inventory WHERE sku=? LIMIT 1"
+    ).bind(plan.sku).first();
+
+    if (!item) {
+      await env.DB.prepare(
+        `INSERT INTO inventory
+         (sku,category,product_name,format,media_condition,sleeve_condition,cost_jpy,price_jpy,location,quantity,sync_state,updated_at)
+         VALUES (?,?,?,?,?,?,0,?,?,?,?,CURRENT_TIMESTAMP)`
+      ).bind(
+        plan.sku,
+        plan.inventory.category,
+        plan.inventory.product_name,
+        plan.inventory.format,
+        plan.inventory.media_condition,
+        plan.inventory.sleeve_condition,
+        plan.inventory.price_jpy,
+        plan.inventory.location,
+        plan.inventory.quantity,
+        "SYNCED"
+      ).run();
+      created += 1;
+      item = { sku: plan.sku };
+    }
+
+    try {
+      await env.DB.prepare(
+        `INSERT INTO channel_listings
+         (sku,channel,external_id,listing_status,listing_url,price_jpy,quantity,last_note,last_synced_at)
+         VALUES (?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`
+      ).bind(
+        item.sku,
+        plan.channel.channel,
+        plan.channel.external_id,
+        plan.channel.listing_status,
+        plan.channel.listing_url,
+        plan.channel.price_jpy,
+        plan.channel.quantity,
+        plan.channel.last_note
+      ).run();
+      linked += 1;
+    } catch (error) {
+      conflicts.push({
+        sku: item.sku,
+        external_id: plan.channel.external_id,
+        error: String(error?.message || error).slice(0, 240)
+      });
+    }
+  }
+
+  return {
+    ok: conflicts.length === 0,
+    status: conflicts.length === 0 ? 200 : 409,
+    body: {
+      mode: "apply",
+      username: first.body?.username || null,
+      pages_read: pages,
+      listings_seen: all.length,
+      valid: valid.length,
+      invalid: invalid.length,
+      inventory_created: created,
+      listings_linked: linked,
+      listings_updated: updated,
+      conflicts,
+      errors: invalid
+    }
+  };
+}
+
 export async function discogsStopListing(env, listingId) {
   const stopped = await discogsRequest(env, `/marketplace/listings/${encodeURIComponent(listingId)}`, { method: "DELETE" });
   if (!(stopped.ok || stopped.status === 404)) return { ok: false, phase: "stop", ...stopped };
@@ -674,6 +928,29 @@ export default {
         r.ok ? 200 : r.status || 502
       );
     }
+    if (pathname === "/api/connectors/discogs/listings" && request.method === "GET") {
+      const page = Number(url.searchParams.get("page") || 1);
+      const perPage = Number(url.searchParams.get("per_page") || 50);
+      const r = await discogsForSale(env, { page, perPage });
+      return json(
+        { ok: r.ok, status: r.status, data: r.ok ? r.body : null, error: r.ok ? null : r.error || r.body },
+        r.ok ? 200 : r.status || 502
+      );
+    }
+
+    if (pathname === "/api/connectors/discogs/sync" && request.method === "POST") {
+      const body = await request.json().catch(() => ({}));
+      const r = await syncDiscogsForSale(env, {
+        maxPages: body?.max_pages,
+        perPage: body?.per_page,
+        apply: body?.apply === true
+      });
+      return json(
+        { ok: r.ok, status: r.status, data: r.body || null, error: r.ok ? null : r.error || null },
+        r.ok ? 200 : r.status || 502
+      );
+    }
+
 
     const discogsStop = pathname.match(/^\/api\/connectors\/discogs\/listings\/([^/]+)\/stop$/);
     if (discogsStop && request.method === "POST") {
