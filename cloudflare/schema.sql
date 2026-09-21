@@ -85,3 +85,14 @@ CREATE TABLE IF NOT EXISTS hunter_intake (
 );
 
 CREATE INDEX IF NOT EXISTS idx_hunter_source ON hunter_intake(provider, source_id);
+
+
+CREATE TABLE IF NOT EXISTS hunter_cache (
+  cache_key TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  fetched_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_hunter_cache_expires ON hunter_cache(expires_at);

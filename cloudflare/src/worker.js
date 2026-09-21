@@ -12,6 +12,9 @@ import {
   visionStatus,
   analyzeHunterImage
 } from "./vision.js";
+import {
+  hunterSearchMusicBrainz
+} from "./musicbrainz.js";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 
@@ -333,8 +336,10 @@ export function validateHunterAdd(body) {
 
   const releaseId = asTrimmedString(body.release_id);
   const title = asTrimmedString(body.title);
-  if (!/^\d+$/.test(releaseId)) return { ok: false, error: "release_id required" };
+  const provider = asTrimmedString(body.provider || "MUSICBRAINZ").toUpperCase();
+  if (!/^[A-Za-z0-9-]{6,64}$/.test(releaseId)) return { ok: false, error: "release_id required" };
   if (!title) return { ok: false, error: "title required" };
+  if (!new Set(["MUSICBRAINZ","DISCOGS"]).has(provider)) return { ok: false, error: "invalid provider" };
 
   const cost = asInteger(body.cost_jpy == null ? 0 : body.cost_jpy, "cost_jpy", { min: 0 });
   if (!cost.ok) return cost;
@@ -352,6 +357,7 @@ export function validateHunterAdd(body) {
     ok: true,
     value: {
       release_id: releaseId,
+      provider,
       title,
       format: asOptionalString(body.format),
       cost_jpy: cost.value,
@@ -391,9 +397,10 @@ async function hunterAddToInventory(request, env) {
       env.DB.prepare(
         `INSERT INTO hunter_intake
          (sku,provider,source_id,source_url,query_text,barcode,lowest_market_jpy)
-         VALUES (?,'DISCOGS',?,?,?,?,?)`
+         VALUES (?,?,?,?,?,?,?)`
       ).bind(
         sku,
+        v.provider,
         v.release_id,
         v.source_url,
         v.query_text,
@@ -414,7 +421,7 @@ async function hunterAddToInventory(request, env) {
     sku,
     item: await inventoryDetail(env, sku),
     source: {
-      provider: "DISCOGS",
+      provider: v.provider,
       release_id: v.release_id,
       source_url: v.source_url
     }
@@ -1039,7 +1046,7 @@ export default {
         service: "reuse-os-core-v0",
         version: "0.2.0",
         bindings: { d1: !!env.DB, r2: !!env.MEDIA },
-        connectors: { discogs: !!env.DISCOGS_TOKEN, ebay: true, vision_secret: !!env.GOOGLE_VISION_API_KEY },
+        connectors: { discogs: !!env.DISCOGS_TOKEN, musicbrainz: true, ebay: true, vision_secret: !!env.GOOGLE_VISION_API_KEY },
         admin: { configured: !!env.ADMIN_TOKEN }
       });
     }
@@ -1069,9 +1076,15 @@ export default {
 
     if (pathname === "/api/hunter/search" && request.method === "POST") {
       const body = await request.json().catch(() => null);
-      const r = await hunterSearchDiscogs(env, body?.query);
+      const r = await hunterSearchMusicBrainz(env, body?.query);
       return json(
-        { ok: r.ok, status: r.status, data: r.ok ? r.body : null, error: r.ok ? null : r.error || r.body, rate_limit: r.rate_limit || null },
+        {
+          ok: r.ok,
+          status: r.status,
+          data: r.ok ? r.body : null,
+          error: r.ok ? null : r.error || r.body,
+          retry_after: r.retry_after || null
+        },
         r.ok ? 200 : r.status || 502
       );
     }
