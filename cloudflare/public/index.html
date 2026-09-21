@@ -47,6 +47,31 @@
     <div class="muted">v0のみlocalStorage保存。商品化時はtenant auth / Cloudflare Accessへ置換。</div>
   </section>
 
+  <section class="card" style="margin-top:12px">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <b style="margin:0">eBay OAuth</b>
+      <span id="ebayState" class="pill">未設定</span>
+    </div>
+    <div class="muted" style="margin:8px 0 10px">Sandboxで接続確認してから本番へ切替。Cert IDとトークンは画面へ再表示しません。</div>
+    <div class="form-grid">
+      <select id="ebayEnv">
+        <option value="sandbox">sandbox</option>
+        <option value="production">production</option>
+      </select>
+      <input id="ebayClientId" class="wide" placeholder="App ID / Client ID">
+      <input id="ebayClientSecret" type="password" autocomplete="off" placeholder="Cert ID / Client Secret">
+      <input id="ebayRuname" placeholder="RuName">
+      <button id="ebaySave">設定保存</button>
+    </div>
+    <div class="muted" style="margin-top:10px">Auth Accepted URL: <code id="ebayCallback">読込後に表示</code></div>
+    <div class="row" style="margin-top:10px">
+      <button id="ebayConnect">eBayと接続</button>
+      <button id="ebayTest" class="ghost">接続テスト</button>
+      <button id="ebayDisconnect" class="ghost">接続解除</button>
+    </div>
+    <div id="ebayNotice" class="muted" style="margin-top:8px"></div>
+  </section>
+
   <section class="grid" style="margin-top:12px">
     <div class="card"><b>在庫総数</b><div id="total" class="big">0</div></div>
     <div class="card"><b>販売可能</b><div id="available" class="big">0</div></div>
@@ -128,8 +153,21 @@ async function health() {
   const j = await r.json();
   $('#core').textContent = j.ok ? 'ONLINE' : 'ERROR';
   $('#discogs').textContent = j.connectors?.discogs ? 'READY' : 'MISSING';
-  $('#ebay').textContent = j.connectors?.ebay ? 'READY' : '承認待ち';
+  $('#ebay').textContent = token.value ? 'CHECKING' : '要Admin Token';
   $('#r2').textContent = j.bindings?.r2 ? 'READY' : 'PENDING';
+}
+async function ebayStatus() {
+  const j = await api('/api/connectors/ebay/oauth/status');
+  $('#ebay').textContent = j.connected ? 'CONNECTED' : (j.configured ? 'READY TO AUTH' : '未設定');
+  $('#ebayState').textContent = j.connected ? '接続済み' : (j.configured ? '認可待ち' : '未設定');
+  $('#ebayCallback').textContent = j.callback_url || location.origin + '/oauth/ebay/callback';
+  if (j.runame) $('#ebayRuname').placeholder = '設定済み: ' + j.runame;
+  if (j.client_id_tail) $('#ebayClientId').placeholder = '設定済み: …' + j.client_id_tail;
+  $('#ebayEnv').value = j.environment || 'sandbox';
+  $('#ebayNotice').textContent = j.connected
+    ? 'OAuth接続済み。アクセストークンは必要時に自動更新します。'
+    : (j.configured ? 'eBay側のAuth Accepted URLを上記URLに設定して「eBayと接続」を押してください。' : 'App ID / Cert ID / RuNameを保存してください。');
+  return j;
 }
 async function summary() {
   const j = await api('/api/dashboard');
@@ -166,8 +204,8 @@ async function refreshAll() {
       log('ADMIN_TOKENを入力すると在庫管理を開始できます。');
       return;
     }
-    const [s, inv] = await Promise.all([summary(), inventory()]);
-    log({ ok: true, loaded: inv.items?.length || 0 });
+    const [s, inv, eb] = await Promise.all([summary(), inventory(), ebayStatus()]);
+    log({ ok: true, loaded: inv.items?.length || 0, ebay_connected: !!eb.connected });
   } catch (e) {
     log(e.data || String(e));
   }
@@ -206,6 +244,82 @@ $('#add').onclick = async () => {
     log(e.data || String(e));
   }
 };
+$('#ebaySave').onclick = async () => {
+  const notice = $('#ebayNotice');
+  notice.className = 'muted';
+  notice.textContent = '保存中…';
+  const body = {
+    environment: $('#ebayEnv').value,
+    client_id: $('#ebayClientId').value,
+    client_secret: $('#ebayClientSecret').value,
+    runame: $('#ebayRuname').value
+  };
+  try {
+    const j = await api('/api/connectors/ebay/config', {
+      method: 'POST',
+      headers: {'content-type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    $('#ebayClientSecret').value = '';
+    $('#ebayClientId').value = '';
+    $('#ebayRuname').value = '';
+    notice.className = 'ok';
+    notice.textContent = '保存しました。eBay側のAuth Accepted URLを確認してください。';
+    await ebayStatus();
+    log(j);
+  } catch (e) {
+    notice.className = 'error';
+    notice.textContent = e.message;
+    log(e.data || String(e));
+  }
+};
+$('#ebayConnect').onclick = async () => {
+  const notice = $('#ebayNotice');
+  try {
+    const j = await api('/api/connectors/ebay/oauth/start');
+    notice.className = 'muted';
+    notice.textContent = 'eBay認可画面を開きました。認可後、この画面へ戻って「更新」を押してください。';
+    log({ environment: j.environment, callback_url: j.callback_url, scopes: j.scopes });
+    window.open(j.auth_url, '_blank', 'noopener');
+  } catch (e) {
+    notice.className = 'error';
+    notice.textContent = e.message;
+    log(e.data || String(e));
+  }
+};
+$('#ebayTest').onclick = async () => {
+  const notice = $('#ebayNotice');
+  notice.className = 'muted';
+  notice.textContent = 'eBay接続を確認中…';
+  try {
+    const j = await api('/api/connectors/ebay/privileges');
+    notice.className = j.ok ? 'ok' : 'error';
+    notice.textContent = j.ok ? '接続OK。Seller account応答を取得しました。' : '接続確認に失敗しました。';
+    log(j);
+    await ebayStatus();
+  } catch (e) {
+    notice.className = 'error';
+    notice.textContent = e.message;
+    log(e.data || String(e));
+  }
+};
+$('#ebayDisconnect').onclick = async () => {
+  const notice = $('#ebayNotice');
+  try {
+    const j = await api('/api/connectors/ebay/disconnect', { method:'POST' });
+    notice.className = 'muted';
+    notice.textContent = 'eBay OAuth接続を解除しました。App設定は保持しています。';
+    log(j);
+    await ebayStatus();
+  } catch (e) {
+    notice.className = 'error';
+    notice.textContent = e.message;
+    log(e.data || String(e));
+  }
+};
+window.addEventListener('focus', () => {
+  if (token.value) ebayStatus().catch(() => {});
+});
 refreshAll();
 </script>
 </body>

@@ -1,0 +1,61 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  EBAY_SCOPES,
+  ebayHosts,
+  encryptEbayPayload,
+  decryptEbayPayload,
+  signEbayState,
+  verifyEbayState
+} from "../src/ebay.js";
+
+test("eBay scopes cover listing, account policies and fulfillment without buy/PII scopes", () => {
+  assert.deepEqual(EBAY_SCOPES, [
+    "https://api.ebay.com/oauth/api_scope/sell.inventory",
+    "https://api.ebay.com/oauth/api_scope/sell.account",
+    "https://api.ebay.com/oauth/api_scope/sell.fulfillment"
+  ]);
+  assert.equal(EBAY_SCOPES.some((scope) => /buy|identity|commerce\.identity/.test(scope)), false);
+});
+
+test("eBay hosts fail safe to sandbox unless production is explicit", () => {
+  assert.equal(ebayHosts().environment, "sandbox");
+  assert.equal(ebayHosts("sandbox").api, "https://api.sandbox.ebay.com");
+  assert.equal(ebayHosts("PRODUCTION").api, "https://api.ebay.com");
+  assert.equal(ebayHosts("typo").environment, "sandbox");
+});
+
+test("OAuth state is signed and expires", async () => {
+  const secret = "admin-secret-for-test";
+  const now = 1_800_000_000_000;
+  const state = await signEbayState(secret, now, "nonce-1");
+
+  const valid = await verifyEbayState(state, secret, now + 30_000);
+  assert.equal(valid.ok, true);
+  assert.equal(valid.nonce, "nonce-1");
+
+  const tampered = state.slice(0, -1) + (state.endsWith("A") ? "B" : "A");
+  assert.equal((await verifyEbayState(tampered, secret, now + 30_000)).ok, false);
+  assert.equal((await verifyEbayState(state, secret, now + 11 * 60_000)).error, "STATE_EXPIRED");
+});
+
+test("eBay connector payload encrypts and decrypts without plaintext storage", async () => {
+  const secret = "admin-secret-for-test";
+  const source = {
+    client_id: "sandbox-client",
+    client_secret: "sandbox-cert",
+    runame: "sandbox-runame",
+    tokens: { refresh_token: "refresh-secret" }
+  };
+
+  const encrypted = await encryptEbayPayload(source, secret);
+  assert.equal(encrypted.ciphertext.includes("refresh-secret"), false);
+  assert.equal(encrypted.ciphertext.includes("sandbox-cert"), false);
+
+  const restored = await decryptEbayPayload(encrypted.ciphertext, encrypted.iv, secret);
+  assert.deepEqual(restored, source);
+
+  await assert.rejects(
+    () => decryptEbayPayload(encrypted.ciphertext, encrypted.iv, "wrong-secret")
+  );
+});

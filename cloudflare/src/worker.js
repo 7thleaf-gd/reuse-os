@@ -1,3 +1,12 @@
+import {
+  saveEbayConfig,
+  ebayOAuthStatus,
+  ebayOAuthStart,
+  ebayOAuthCallback,
+  ebayPrivileges,
+  disconnectEbay
+} from "./ebay.js";
+
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 
 export function json(data, status = 200) {
@@ -560,6 +569,10 @@ export default {
     const url = new URL(request.url);
     const { pathname } = url;
 
+    if (pathname === "/oauth/ebay/callback" && request.method === "GET") {
+      return ebayOAuthCallback(request, env);
+    }
+
     if (pathname === "/api/health" && request.method === "GET") {
       return json({
         ok: true,
@@ -627,6 +640,26 @@ export default {
     const mediaGet = pathname.match(/^\/api\/media\/(.+)$/);
     if (mediaGet && request.method === "GET") {
       return fetchMedia(env, decodeURIComponent(mediaGet[1]));
+    }
+
+    if (pathname === "/api/connectors/ebay/config" && request.method === "POST") {
+      return saveEbayConfig(request, env);
+    }
+
+    if (pathname === "/api/connectors/ebay/oauth/status" && request.method === "GET") {
+      return ebayOAuthStatus(request, env);
+    }
+
+    if (pathname === "/api/connectors/ebay/oauth/start" && request.method === "GET") {
+      return ebayOAuthStart(request, env);
+    }
+
+    if (pathname === "/api/connectors/ebay/privileges" && request.method === "GET") {
+      return ebayPrivileges(request, env);
+    }
+
+    if (pathname === "/api/connectors/ebay/disconnect" && request.method === "POST") {
+      return disconnectEbay(request, env);
     }
 
     if (pathname === "/api/connectors/discogs/identity" && request.method === "GET") {
