@@ -47,6 +47,42 @@
     <div class="muted">v0のみlocalStorage保存。商品化時はtenant auth / Cloudflare Accessへ置換。</div>
   </section>
 
+
+  <section class="card" style="margin-top:12px">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <b style="margin:0">Hunter Mode <span class="pill">v0.1</span></b>
+      <span class="muted">Discogs catalog</span>
+    </div>
+    <div class="muted" style="margin:8px 0 10px">店頭でバーコード / アーティスト / タイトルを入れて候補検索 → 相場確認 → 仕入れ判断 → そのまま在庫へ。</div>
+    <div class="row">
+      <input id="hunterQuery" class="grow" placeholder="バーコード / アーティスト / タイトル" enterkeyhint="search">
+      <button id="hunterSearch">探す</button>
+      <button id="hunterCamera" class="ghost">📷 バーコード</button>
+      <input id="hunterPhoto" type="file" accept="image/*" capture="environment" style="display:none">
+    </div>
+    <div id="hunterNotice" class="muted" style="margin-top:8px"></div>
+    <div id="hunterResults" style="display:grid;gap:8px;margin-top:10px"></div>
+
+    <div id="hunterPick" style="display:none;margin-top:14px;border-top:1px solid #eee;padding-top:14px">
+      <div class="row" style="align-items:flex-start">
+        <img id="hunterCover" alt="" style="width:84px;height:84px;object-fit:cover;border-radius:10px;background:#eee">
+        <div class="grow">
+          <b id="hunterTitle" style="margin:0 0 4px"></b>
+          <div id="hunterMeta" class="muted"></div>
+          <div id="hunterMarket" style="margin-top:6px"></div>
+        </div>
+      </div>
+      <div class="form-grid" style="margin-top:10px">
+        <input id="hunterCost" inputmode="numeric" placeholder="仕入れ ¥">
+        <input id="hunterPrice" inputmode="numeric" placeholder="売価 ¥">
+        <input id="hunterLocation" placeholder="棚番">
+        <input id="hunterQty" inputmode="numeric" value="1" placeholder="数量">
+        <button id="hunterAdd">在庫へ追加</button>
+      </div>
+      <div id="hunterMargin" class="muted" style="margin-top:8px"></div>
+    </div>
+  </section>
+
   <section class="card" style="margin-top:12px">
     <div class="row" style="justify-content:space-between;align-items:center">
       <b style="margin:0">Discogs Sync</b>
@@ -212,6 +248,99 @@ function renderDiscogsPreview(data) {
   $('#discogsNotice').textContent = `Discogs ${data?.listings_seen || 0}件 / 取込可能 ${data?.valid || 0}件 / 要確認 ${data?.invalid || 0}件` + (plans.length > 50 ? '（先頭50件表示）' : '');
 }
 
+let hunterItems = [];
+let hunterSelected = null;
+let hunterStats = null;
+
+function hunterRateLimitMessage(e) {
+  const retry = e?.data?.rate_limit?.retry_after;
+  return e?.data?.status === 429
+    ? (retry ? `Discogsレート制限中。約${retry}秒後に再試行。` : 'Discogsレート制限中。少し待って再試行。')
+    : (e?.message || 'Hunter検索エラー');
+}
+
+function renderHunterResults(items) {
+  hunterItems = items || [];
+  const box = $('#hunterResults');
+  if (!hunterItems.length) {
+    box.innerHTML = '<div class="muted">候補なし</div>';
+    return;
+  }
+  box.innerHTML = hunterItems.map((item, index) => `
+    <button class="ghost hunterResult" data-index="${index}" style="text-align:left;width:100%;display:flex;gap:10px;align-items:center">
+      ${item.thumb ? '<img src="'+escapeHtml(item.thumb)+'" alt="" style="width:54px;height:54px;object-fit:cover;border-radius:8px;background:#eee">' : ''}
+      <span class="grow">
+        <b style="display:block;margin:0 0 3px">${escapeHtml(item.title)}</b>
+        <span class="muted">${escapeHtml([item.year,item.country,item.format,item.label,item.catno].filter(Boolean).join(' · '))}</span>
+      </span>
+    </button>`).join('');
+}
+
+async function runHunterSearch() {
+  const q = $('#hunterQuery').value.trim();
+  const notice = $('#hunterNotice');
+  if (!q) {
+    notice.className = 'error';
+    notice.textContent = 'バーコードか検索語を入れてください。';
+    return;
+  }
+  notice.className = 'muted';
+  notice.textContent = 'Discogsカタログ検索中…';
+  $('#hunterPick').style.display = 'none';
+  hunterSelected = null;
+  hunterStats = null;
+  try {
+    const j = await api('/api/hunter/search', {
+      method: 'POST',
+      headers: {'content-type':'application/json'},
+      body: JSON.stringify({ query:q })
+    });
+    renderHunterResults(j.data?.items || []);
+    notice.className = 'ok';
+    notice.textContent = `候補 ${j.data?.count || 0}件` + (j.data?.barcode ? ' / barcode ' + j.data.barcode : '');
+    log(j.data);
+  } catch (e) {
+    notice.className = 'error';
+    notice.textContent = hunterRateLimitMessage(e);
+    log(e.data || String(e));
+  }
+}
+
+async function selectHunter(index) {
+  const item = hunterItems[index];
+  if (!item) return;
+  hunterSelected = item;
+  hunterStats = null;
+  $('#hunterTitle').textContent = item.title || '';
+  $('#hunterMeta').textContent = [item.year,item.country,item.format,item.label,item.catno,item.barcode].filter(Boolean).join(' · ');
+  $('#hunterCover').src = item.cover_image || item.thumb || '';
+  $('#hunterMarket').textContent = 'Discogs相場を確認中…';
+  $('#hunterPick').style.display = 'block';
+  $('#hunterPrice').value = '';
+  updateHunterMargin();
+  try {
+    const j = await api('/api/hunter/stats/' + encodeURIComponent(item.release_id));
+    hunterStats = j.data || null;
+    const low = hunterStats?.lowest_price_jpy;
+    $('#hunterMarket').textContent = low == null
+      ? `出品数 ${hunterStats?.num_for_sale ?? '—'} / 最安値なし`
+      : `最安値 ${yen(low)} / 出品数 ${hunterStats?.num_for_sale ?? '—'}`;
+    if (low != null) $('#hunterPrice').value = low;
+    updateHunterMargin();
+  } catch (e) {
+    $('#hunterMarket').textContent = hunterRateLimitMessage(e);
+  }
+}
+
+function updateHunterMargin() {
+  const cost = Number($('#hunterCost').value || 0);
+  const price = Number($('#hunterPrice').value || 0);
+  const gross = price - cost;
+  $('#hunterMargin').textContent = price > 0
+    ? `参考粗利（手数料・送料前）: ${yen(gross)}`
+    : '売価を入れると参考粗利を表示';
+}
+
 async function ebayStatus() {
   const j = await api('/api/connectors/ebay/oauth/status');
   $('#ebay').textContent = j.connected ? 'CONNECTED' : (j.configured ? 'READY TO AUTH' : '未設定');
@@ -314,6 +443,85 @@ function showDiscogsError(error) {
   }
   log(error?.data || String(error));
 }
+
+$('#hunterSearch').onclick = runHunterSearch;
+$('#hunterQuery').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') runHunterSearch();
+});
+$('#hunterResults').addEventListener('click', (e) => {
+  const button = e.target.closest('.hunterResult');
+  if (!button) return;
+  selectHunter(Number(button.dataset.index));
+});
+$('#hunterCost').addEventListener('input', updateHunterMargin);
+$('#hunterPrice').addEventListener('input', updateHunterMargin);
+
+$('#hunterCamera').onclick = () => $('#hunterPhoto').click();
+$('#hunterPhoto').onchange = async () => {
+  const file = $('#hunterPhoto').files?.[0];
+  if (!file) return;
+  const notice = $('#hunterNotice');
+  if (!('BarcodeDetector' in window)) {
+    notice.className = 'muted';
+    notice.textContent = 'このブラウザは画像バーコード自動読取に未対応。番号を入力してください。';
+    return;
+  }
+  try {
+    const detector = new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e']});
+    const bitmap = await createImageBitmap(file);
+    const codes = await detector.detect(bitmap);
+    const value = codes?.[0]?.rawValue || '';
+    if (!value) throw new Error('バーコードを読めませんでした');
+    $('#hunterQuery').value = value;
+    await runHunterSearch();
+  } catch (e) {
+    notice.className = 'error';
+    notice.textContent = e.message || 'バーコードを読めませんでした';
+  } finally {
+    $('#hunterPhoto').value = '';
+  }
+};
+
+$('#hunterAdd').onclick = async () => {
+  if (!hunterSelected) return;
+  const notice = $('#hunterNotice');
+  notice.className = 'muted';
+  notice.textContent = '在庫へ追加中…';
+  try {
+    const j = await api('/api/hunter/add', {
+      method: 'POST',
+      headers: {'content-type':'application/json'},
+      body: JSON.stringify({
+        release_id: hunterSelected.release_id,
+        title: hunterSelected.title,
+        format: hunterSelected.format,
+        source_url: hunterSelected.uri,
+        barcode: hunterSelected.barcode,
+        query_text: $('#hunterQuery').value.trim(),
+        lowest_market_jpy: hunterStats?.lowest_price_jpy ?? null,
+        cost_jpy: $('#hunterCost').value || 0,
+        price_jpy: $('#hunterPrice').value || null,
+        location: $('#hunterLocation').value || null,
+        quantity: $('#hunterQty').value || 1
+      })
+    });
+    notice.className = 'ok';
+    notice.textContent = '在庫追加: ' + j.sku;
+    $('#hunterPick').style.display = 'none';
+    $('#hunterResults').innerHTML = '';
+    $('#hunterQuery').value = '';
+    $('#hunterCost').value = '';
+    $('#hunterPrice').value = '';
+    hunterSelected = null;
+    hunterStats = null;
+    await Promise.all([summary(), inventory()]);
+    log(j);
+  } catch (e) {
+    notice.className = 'error';
+    notice.textContent = e.message;
+    log(e.data || String(e));
+  }
+};
 
 $('#discogsCheck').onclick = async () => {
   const notice = $('#discogsNotice');

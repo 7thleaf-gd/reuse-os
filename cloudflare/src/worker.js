@@ -238,6 +238,184 @@ async function discogsRequest(env, path, init = {}) {
 export async function discogsIdentity(env) {
   return discogsRequest(env, "/oauth/identity");
 }
+export function normalizeHunterSearchResult(result) {
+  const format = Array.isArray(result?.format)
+    ? result.format.join(", ")
+    : (result?.format || null);
+  const barcode = Array.isArray(result?.barcode)
+    ? (result.barcode[0] || null)
+    : (result?.barcode || null);
+  const labels = Array.isArray(result?.label) ? result.label : [];
+  const uri = result?.uri
+    ? (String(result.uri).startsWith("http") ? String(result.uri) : "https://www.discogs.com" + String(result.uri))
+    : null;
+
+  return {
+    release_id: result?.id == null ? null : String(result.id),
+    title: result?.title || null,
+    year: result?.year == null ? null : Number(result.year) || null,
+    country: result?.country || null,
+    format,
+    label: labels[0] || null,
+    catno: result?.catno || null,
+    barcode,
+    thumb: result?.thumb || null,
+    cover_image: result?.cover_image || null,
+    uri
+  };
+}
+
+export async function hunterSearchDiscogs(env, query) {
+  const raw = asTrimmedString(query);
+  if (!raw) return { ok: false, status: 400, error: "HUNTER_QUERY_REQUIRED" };
+  if (raw.length > 200) return { ok: false, status: 400, error: "HUNTER_QUERY_TOO_LONG" };
+
+  const compact = raw.replace(/[\s-]/g, "");
+  const isBarcode = /^\d{8,14}$/.test(compact);
+  const params = new URLSearchParams({ type: "release", per_page: "12", page: "1" });
+  if (isBarcode) params.set("barcode", compact);
+  else params.set("q", raw);
+
+  const result = await discogsRequest(env, "/database/search?" + params.toString());
+  if (!result.ok) return result;
+
+  const items = Array.isArray(result.body?.results)
+    ? result.body.results.map(normalizeHunterSearchResult).filter((x) => x.release_id && x.title)
+    : [];
+
+  return {
+    ok: true,
+    status: result.status,
+    rate_limit: result.rate_limit,
+    body: {
+      query: raw,
+      barcode: isBarcode ? compact : null,
+      count: items.length,
+      items
+    }
+  };
+}
+
+export async function hunterDiscogsStats(env, releaseId) {
+  const id = asTrimmedString(releaseId);
+  if (!/^\d+$/.test(id)) return { ok: false, status: 400, error: "INVALID_RELEASE_ID" };
+
+  const result = await discogsRequest(
+    env,
+    "/marketplace/stats/" + encodeURIComponent(id) + "?curr_abbr=JPY"
+  );
+  if (!result.ok) return result;
+
+  const lowest = Number(result.body?.lowest_price?.value);
+  return {
+    ok: true,
+    status: result.status,
+    rate_limit: result.rate_limit,
+    body: {
+      release_id: id,
+      lowest_price_jpy: Number.isFinite(lowest) ? Math.max(0, Math.round(lowest)) : null,
+      num_for_sale: Number.isFinite(Number(result.body?.num_for_sale))
+        ? Number(result.body.num_for_sale)
+        : null
+    }
+  };
+}
+
+export function validateHunterAdd(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return { ok: false, error: "invalid JSON body" };
+  }
+
+  const releaseId = asTrimmedString(body.release_id);
+  const title = asTrimmedString(body.title);
+  if (!/^\d+$/.test(releaseId)) return { ok: false, error: "release_id required" };
+  if (!title) return { ok: false, error: "title required" };
+
+  const cost = asInteger(body.cost_jpy == null ? 0 : body.cost_jpy, "cost_jpy", { min: 0 });
+  if (!cost.ok) return cost;
+  const price = asInteger(body.price_jpy, "price_jpy", { min: 0, nullable: true });
+  if (!price.ok) return price;
+  const lowest = asInteger(body.lowest_market_jpy, "lowest_market_jpy", { min: 0, nullable: true });
+  if (!lowest.ok) return lowest;
+  const quantity = asInteger(body.quantity == null ? 1 : body.quantity, "quantity", { min: 1 });
+  if (!quantity.ok) return quantity;
+
+  const sourceUrl = asOptionalString(body.source_url);
+  const barcode = asOptionalString(body.barcode);
+
+  return {
+    ok: true,
+    value: {
+      release_id: releaseId,
+      title,
+      format: asOptionalString(body.format),
+      cost_jpy: cost.value,
+      price_jpy: price.value,
+      location: asOptionalString(body.location),
+      quantity: quantity.value,
+      source_url: sourceUrl,
+      query_text: asOptionalString(body.query_text),
+      barcode,
+      lowest_market_jpy: lowest.value
+    }
+  };
+}
+
+async function hunterAddToInventory(request, env) {
+  const parsed = validateHunterAdd(await request.json().catch(() => null));
+  if (!parsed.ok) return json({ ok: false, error: parsed.error }, 400);
+
+  const v = parsed.value;
+  const sku = "HUNT-" + v.release_id + "-" + crypto.randomUUID().slice(0, 6).toUpperCase();
+
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO inventory
+         (sku,status,sync_state,category,product_name,format,cost_jpy,price_jpy,location,quantity,updated_at)
+         VALUES (?,'AVAILABLE','HUNTER','MUSIC',?,?,?,?,?,?,CURRENT_TIMESTAMP)`
+      ).bind(
+        sku,
+        v.title,
+        v.format,
+        v.cost_jpy,
+        v.price_jpy,
+        v.location,
+        v.quantity
+      ),
+      env.DB.prepare(
+        `INSERT INTO hunter_intake
+         (sku,provider,source_id,source_url,query_text,barcode,lowest_market_jpy)
+         VALUES (?,'DISCOGS',?,?,?,?,?)`
+      ).bind(
+        sku,
+        v.release_id,
+        v.source_url,
+        v.query_text,
+        v.barcode,
+        v.lowest_market_jpy
+      )
+    ]);
+  } catch (error) {
+    return json({
+      ok: false,
+      error: "HUNTER_INVENTORY_WRITE_FAILED",
+      detail: String(error?.message || error).slice(0, 240)
+    }, 500);
+  }
+
+  return json({
+    ok: true,
+    sku,
+    item: await inventoryDetail(env, sku),
+    source: {
+      provider: "DISCOGS",
+      release_id: v.release_id,
+      source_url: v.source_url
+    }
+  }, 201);
+}
+
 
 export function normalizeDiscogsListing(listing) {
   const release = listing?.release || {};
@@ -872,6 +1050,28 @@ export default {
     if (pathname === "/api/dashboard" && request.method === "GET") {
       return json({ ok: true, summary: await dashboardSummary(env) });
     }
+    if (pathname === "/api/hunter/search" && request.method === "POST") {
+      const body = await request.json().catch(() => null);
+      const r = await hunterSearchDiscogs(env, body?.query);
+      return json(
+        { ok: r.ok, status: r.status, data: r.ok ? r.body : null, error: r.ok ? null : r.error || r.body, rate_limit: r.rate_limit || null },
+        r.ok ? 200 : r.status || 502
+      );
+    }
+
+    const hunterStats = pathname.match(/^\/api\/hunter\/stats\/([^/]+)$/);
+    if (hunterStats && request.method === "GET") {
+      const r = await hunterDiscogsStats(env, decodeURIComponent(hunterStats[1]));
+      return json(
+        { ok: r.ok, status: r.status, data: r.ok ? r.body : null, error: r.ok ? null : r.error || r.body, rate_limit: r.rate_limit || null },
+        r.ok ? 200 : r.status || 502
+      );
+    }
+
+    if (pathname === "/api/hunter/add" && request.method === "POST") {
+      return hunterAddToInventory(request, env);
+    }
+
     if (pathname === "/api/sales/events" && request.method === "GET") {
       return json({ ok: true, events: await listSaleEvents(env) });
     }
