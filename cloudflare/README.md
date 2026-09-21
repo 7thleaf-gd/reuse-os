@@ -10,7 +10,7 @@ Google Apps Script / Sheets / Driveを必須依存にしない商品化コア。
 - Worker Secrets:
   - `ADMIN_TOKEN`
   - `DISCOGS_TOKEN`
-  - later: `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`, `EBAY_RUNAME`, refresh token
+- eBay credentials and OAuth refresh token are entered through the authenticated Admin Shell and encrypted before D1 storage. They are never written to Git or returned to the browser after save.
 
 Google連携はOptional Bridgeとして扱う。
 
@@ -89,3 +89,35 @@ When the last unit sells, inventory becomes `SOLD` with `sync_state=STOP_PENDING
 When stock remains, inventory stays `AVAILABLE` with `sync_state=SYNC_PENDING`.
 
 The response includes `destructive_actions_executed:false`. Actual marketplace stop calls remain a separate explicit executor boundary.
+
+
+## eBay OAuth
+
+The Cloudflare Core owns the eBay OAuth flow. Do not use the legacy GAS OAuth path and do not paste a two-hour User Access Token into source code.
+
+1. Open the Worker Admin Shell and enter `ADMIN_TOKEN`.
+2. In **eBay OAuth**, save Sandbox App ID, Cert ID, and OAuth-enabled RuName.
+3. In eBay Developer Portal, set that RuName's **Auth Accepted URL** to:
+   `https://reuse-os-core-v0.7thleaf.workers.dev/oauth/ebay/callback`
+4. Click **eBayと接続** and approve with the Sandbox seller.
+5. The callback exchanges the authorization code for access + refresh tokens, encrypts the connector payload, and stores only ciphertext in D1.
+6. **接続テスト** calls the read-only Account API privileges endpoint.
+
+Requested OAuth scopes are intentionally limited to the selling workflow while avoiding buy/PII/marketing scopes:
+
+- `sell.inventory`
+- `sell.account`
+- `sell.fulfillment`
+
+The first two cover inventory/offers and seller policies; fulfillment is included up front so order/shipping integration does not require another consent ceremony later.
+
+### Admin API
+
+- `POST /api/connectors/ebay/config` — save App ID / Cert ID / RuName / environment
+- `GET /api/connectors/ebay/oauth/status` — sanitized connection state
+- `GET /api/connectors/ebay/oauth/start` — create a signed OAuth consent URL
+- `GET /oauth/ebay/callback` — public eBay callback; validates signed state, exchanges code, stores encrypted tokens
+- `GET /api/connectors/ebay/privileges` — read-only seller account / selling-limit check
+- `POST /api/connectors/ebay/disconnect` — remove OAuth tokens while retaining app configuration
+
+Sandbox is the fail-safe default. Production is used only when `production` is explicitly saved in the Admin Shell.
