@@ -271,20 +271,37 @@ async function ebayTokenRequest(record, payload) {
   return { ok: true, status: response.status, body };
 }
 
-function callbackHtml(result) {
+function callbackHtml(result, options = {}) {
   const ok = !!result.ok;
   const color = ok ? "#0a6b2b" : "#b00020";
   const title = ok ? "eBay接続完了" : "eBay接続エラー";
   const note = String(result.note || result.error || "").replace(/[&<>"]/g, (ch) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"
   })[ch]);
+  const rescue = options.fragmentRescue ? (
+    '<p id="oauthDiag" style="color:#666;font-size:13px">戻り値を確認中…</p>' +
+    '<script>' +
+    '(function(){' +
+    'var q=new URLSearchParams(location.search);' +
+    'var h=new URLSearchParams((location.hash||"").replace(/^#/,""));' +
+    'if(!q.get("code")&&!q.get("state")&&(h.get("code")||h.get("state")||h.get("error"))){' +
+    'var safe=new URLSearchParams();["code","state","error","error_description","expires_in"].forEach(function(k){if(h.has(k))safe.set(k,h.get(k));});' +
+    'location.replace(location.pathname+"?"+safe.toString());return;' +
+    '}' +
+    'var qk=Array.from(q.keys()).filter(function(k){return k!=="code"&&k!=="state";});' +
+    'var hk=Array.from(h.keys()).filter(function(k){return k!=="code"&&k!=="state";});' +
+    'var el=document.getElementById("oauthDiag");' +
+    'if(el)el.textContent="受信パラメータ: query="+(q.size?"あり":"なし")+" / fragment="+(h.size?"あり":"なし")+(qk.length?" / query keys="+qk.join(","):"")+(hk.length?" / fragment keys="+hk.join(","):"");' +
+    '})();' +
+    '</script>'
+  ) : "";
   return new Response(
     '<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<title>' + title + '</title><body style="font-family:system-ui,sans-serif;padding:32px;max-width:640px;margin:auto">' +
-    '<h1 style="color:' + color + '">' + title + '</h1><p>' + note + '</p>' +
+    '<h1 style="color:' + color + '">' + title + '</h1><p>' + note + '</p>' + rescue +
     '<p><a href="/" style="display:inline-block;padding:10px 14px;background:#111;color:#fff;border-radius:10px;text-decoration:none">Reuse OSへ戻る</a></p>' +
     '</body></html>',
-    { status: ok ? 200 : 400, headers: { "content-type": "text/html; charset=utf-8" } }
+    { status: ok ? 200 : 400, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } }
   );
 }
 
@@ -340,7 +357,7 @@ export async function ebayOAuthCallback(request, env) {
       ? "旧Auth'n'Authの戻り値を受信しました。eBay DevelopersでOAuth (new security)を選択・保存後、Reuse OSの「eBayと接続」からやり直してください。" + suffix
       : "OAuth code/stateがありません。このURLを直接開かず、Reuse OSの「eBayと接続」から認可を開始してください。" + suffix;
 
-    return callbackHtml({ ok: false, error: note });
+    return callbackHtml({ ok: false, error: note }, { fragmentRescue: callback.type === "missing" });
   }
 
   const { code, state } = callback;
