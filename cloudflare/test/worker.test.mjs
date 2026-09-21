@@ -10,7 +10,9 @@ import {
   normalizeListingStatus,
   shouldClearStopPending,
   normalizeDiscogsListing,
-  discogsImportPlan
+  discogsImportPlan,
+  normalizeHunterSearchResult,
+  validateHunterAdd
 } from "../src/worker.js";
 
 test("Discogs auth header is built from secret without logging it", () => {
@@ -222,4 +224,55 @@ test("Discogs import plan prefers safe seller external_id as SKU", () => {
 
   assert.equal(plan.ok, true);
   assert.equal(plan.value.sku, "STORE:CD-10");
+});
+
+
+test("Hunter search result normalization keeps useful Discogs fields", () => {
+  const item = normalizeHunterSearchResult({
+    id: 123,
+    title: "Artist - Album",
+    year: 1999,
+    country: "Japan",
+    format: ["CD", "Album"],
+    label: ["Label"],
+    catno: "ABC-001",
+    barcode: ["4988000000000"],
+    uri: "/release/123-Artist-Album",
+    thumb: "https://img.example/thumb.jpg",
+    cover_image: "https://img.example/cover.jpg"
+  });
+
+  assert.deepEqual(item, {
+    release_id: "123",
+    title: "Artist - Album",
+    year: 1999,
+    country: "Japan",
+    format: "CD, Album",
+    label: "Label",
+    catno: "ABC-001",
+    barcode: "4988000000000",
+    thumb: "https://img.example/thumb.jpg",
+    cover_image: "https://img.example/cover.jpg",
+    uri: "https://www.discogs.com/release/123-Artist-Album"
+  });
+});
+
+test("Hunter add validation accepts inventory economics and rejects missing identity", () => {
+  const valid = validateHunterAdd({
+    release_id: "123",
+    title: "Artist - Album",
+    format: "CD",
+    cost_jpy: "100",
+    price_jpy: "1500",
+    lowest_market_jpy: "1800",
+    location: "BOX-1",
+    quantity: 1
+  });
+  assert.equal(valid.ok, true);
+  assert.equal(valid.value.cost_jpy, 100);
+  assert.equal(valid.value.price_jpy, 1500);
+  assert.equal(valid.value.lowest_market_jpy, 1800);
+
+  assert.equal(validateHunterAdd({ title: "x" }).ok, false);
+  assert.equal(validateHunterAdd({ release_id: "123" }).ok, false);
 });
