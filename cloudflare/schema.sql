@@ -60,3 +60,13 @@ CREATE INDEX IF NOT EXISTS idx_inventory_status ON inventory(status);
 CREATE INDEX IF NOT EXISTS idx_channel_sku ON channel_listings(sku);
 CREATE INDEX IF NOT EXISTS idx_channel_status ON channel_listings(channel, listing_status);
 CREATE INDEX IF NOT EXISTS idx_sale_events_sku ON sale_events(sku);
+
+
+-- Connector credentials are encrypted before storage.
+-- The encryption key is derived server-side from ADMIN_TOKEN and is never stored in D1.
+CREATE TABLE IF NOT EXISTS connector_secrets (
+  provider TEXT PRIMARY KEY,
+  ciphertext TEXT NOT NULL,
+  iv TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
