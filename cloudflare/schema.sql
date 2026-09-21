@@ -70,3 +70,18 @@ CREATE TABLE IF NOT EXISTS connector_secrets (
   iv TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+
+CREATE TABLE IF NOT EXISTS hunter_intake (
+  sku TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  source_id TEXT,
+  source_url TEXT,
+  query_text TEXT,
+  barcode TEXT,
+  lowest_market_jpy INTEGER,
+  captured_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (sku) REFERENCES inventory(sku) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_hunter_source ON hunter_intake(provider, source_id);
