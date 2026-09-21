@@ -49,6 +49,26 @@
 
   <section class="card" style="margin-top:12px">
     <div class="row" style="justify-content:space-between;align-items:center">
+      <b style="margin:0">Discogs Sync</b>
+      <span id="discogsState" class="pill">未確認</span>
+    </div>
+    <div class="muted" style="margin:8px 0 10px">Discogsの販売中在庫を読み、まず差分プレビュー。D1取込を押すまでReuse OS側も変更しません。Discogs側は一切変更しません。</div>
+    <div class="row">
+      <button id="discogsCheck" class="ghost">接続確認</button>
+      <button id="discogsPreview">差分プレビュー</button>
+      <button id="discogsApply" class="ghost" disabled>D1へ取り込む</button>
+    </div>
+    <div id="discogsNotice" class="muted" style="margin-top:8px"></div>
+    <div id="discogsPreviewBox" style="display:none;overflow:auto;margin-top:10px">
+      <table>
+        <thead><tr><th>SKU</th><th>商品</th><th>価格</th><th>数量</th><th>Discogs ID</th></tr></thead>
+        <tbody id="discogsPreviewRows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:12px">
+    <div class="row" style="justify-content:space-between;align-items:center">
       <b style="margin:0">eBay OAuth</b>
       <span id="ebayState" class="pill">未設定</span>
     </div>
@@ -164,6 +184,34 @@ async function health() {
   $('#ebay').textContent = token.value ? 'CHECKING' : '要Admin Token';
   $('#r2').textContent = j.bindings?.r2 ? 'READY' : 'PENDING';
 }
+let discogsPreviewReady = false;
+
+async function discogsStatus() {
+  const j = await api('/api/connectors/discogs/identity');
+  const username = j.identity?.username || null;
+  $('#discogs').textContent = j.ok ? 'CONNECTED' : 'ERROR';
+  $('#discogsState').textContent = j.ok ? (username || '接続済み') : 'エラー';
+  $('#discogsNotice').textContent = j.ok
+    ? '接続済み' + (username ? ': ' + username : '')
+    : 'Discogs接続を確認できません。';
+  return j;
+}
+
+function renderDiscogsPreview(data) {
+  const plans = data?.plans || [];
+  const rows = plans.slice(0, 50);
+  $('#discogsPreviewRows').innerHTML = rows.length ? rows.map(item => `
+    <tr>
+      <td><code>${escapeHtml(item.sku)}</code></td>
+      <td>${escapeHtml(item.product_name)}</td>
+      <td>${yen(item.price_jpy)}</td>
+      <td>${item.quantity ?? 1}</td>
+      <td><code>${escapeHtml(item.external_id)}</code></td>
+    </tr>`).join('') : '<tr><td colspan="5" class="muted">販売中在庫なし</td></tr>';
+  $('#discogsPreviewBox').style.display = 'block';
+  $('#discogsNotice').textContent = `Discogs ${data?.listings_seen || 0}件 / 取込可能 ${data?.valid || 0}件 / 要確認 ${data?.invalid || 0}件` + (plans.length > 50 ? '（先頭50件表示）' : '');
+}
+
 async function ebayStatus() {
   const j = await api('/api/connectors/ebay/oauth/status');
   $('#ebay').textContent = j.connected ? 'CONNECTED' : (j.configured ? 'READY TO AUTH' : '未設定');
@@ -212,8 +260,8 @@ async function refreshAll() {
       log('ADMIN_TOKENを入力すると在庫管理を開始できます。');
       return;
     }
-    const [s, inv, eb] = await Promise.all([summary(), inventory(), ebayStatus()]);
-    log({ ok: true, loaded: inv.items?.length || 0, ebay_connected: !!eb.connected });
+    const [s, inv, eb, dg] = await Promise.all([summary(), inventory(), ebayStatus(), discogsStatus()]);
+    log({ ok: true, loaded: inv.items?.length || 0, ebay_connected: !!eb.connected, discogs_connected: !!dg.ok });
   } catch (e) {
     log(e.data || String(e));
   }
@@ -252,6 +300,69 @@ $('#add').onclick = async () => {
     log(e.data || String(e));
   }
 };
+$('#discogsCheck').onclick = async () => {
+  const notice = $('#discogsNotice');
+  notice.className = 'muted';
+  notice.textContent = 'Discogs接続を確認中…';
+  try {
+    const j = await discogsStatus();
+    notice.className = j.ok ? 'ok' : 'error';
+    log({ ok:j.ok, username:j.identity?.username || null });
+  } catch (e) {
+    notice.className = 'error';
+    notice.textContent = e.message;
+    log(e.data || String(e));
+  }
+};
+
+$('#discogsPreview').onclick = async () => {
+  const notice = $('#discogsNotice');
+  discogsPreviewReady = false;
+  $('#discogsApply').disabled = true;
+  notice.className = 'muted';
+  notice.textContent = 'Discogs販売中在庫をREAD中…';
+  try {
+    const j = await api('/api/connectors/discogs/sync', {
+      method: 'POST',
+      headers: {'content-type':'application/json'},
+      body: JSON.stringify({ apply:false, per_page:100, max_pages:20 })
+    });
+    renderDiscogsPreview(j.data);
+    discogsPreviewReady = true;
+    $('#discogsApply').disabled = false;
+    notice.className = (j.data?.invalid || 0) > 0 ? 'muted' : 'ok';
+    log(j.data);
+  } catch (e) {
+    notice.className = 'error';
+    notice.textContent = e.message;
+    log(e.data || String(e));
+  }
+};
+
+$('#discogsApply').onclick = async () => {
+  if (!discogsPreviewReady) return;
+  const notice = $('#discogsNotice');
+  $('#discogsApply').disabled = true;
+  notice.className = 'muted';
+  notice.textContent = 'Reuse OS D1へ取り込み中…';
+  try {
+    const j = await api('/api/connectors/discogs/sync', {
+      method: 'POST',
+      headers: {'content-type':'application/json'},
+      body: JSON.stringify({ apply:true, per_page:100, max_pages:20 })
+    });
+    discogsPreviewReady = false;
+    notice.className = j.ok ? 'ok' : 'error';
+    notice.textContent = `取込完了: 新規在庫 ${j.data?.inventory_created || 0} / 新規リンク ${j.data?.listings_linked || 0} / 更新 ${j.data?.listings_updated || 0}`;
+    await Promise.all([summary(), inventory()]);
+    log(j.data);
+  } catch (e) {
+    notice.className = 'error';
+    notice.textContent = e.message;
+    log(e.data || String(e));
+  }
+};
+
 $('#ebaySave').onclick = async () => {
   const notice = $('#ebayNotice');
   notice.className = 'muted';
