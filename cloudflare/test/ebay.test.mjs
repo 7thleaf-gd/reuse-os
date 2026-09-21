@@ -77,3 +77,11 @@ test("eBay callback classifier distinguishes OAuth, direct callback, and legacy 
   assert.equal(legacy.type, "legacy_authnauth");
   assert.equal(legacy.error, "LEGACY_AUTHNAUTH_CALLBACK");
 });
+
+
+test("callback classifier reports a missing query without exposing values", () => {
+  const result = classifyEbayCallback("https://example.test/oauth/ebay/callback");
+  assert.equal(result.ok, false);
+  assert.equal(result.type, "missing");
+  assert.deepEqual(result.keys, []);
+});
