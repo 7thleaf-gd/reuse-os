@@ -300,6 +300,21 @@ $('#add').onclick = async () => {
     log(e.data || String(e));
   }
 };
+function showDiscogsError(error) {
+  const notice = $('#discogsNotice');
+  const status = error?.data?.status || null;
+  const retry = error?.data?.rate_limit?.retry_after;
+  notice.className = 'error';
+  if (status === 429) {
+    notice.textContent = retry
+      ? `Discogs APIのレート制限中。約${retry}秒後に再試行してください。`
+      : 'Discogs APIのレート制限中。連打せず、少し待ってから再試行してください。';
+  } else {
+    notice.textContent = error?.message || 'Discogs接続エラー';
+  }
+  log(error?.data || String(error));
+}
+
 $('#discogsCheck').onclick = async () => {
   const notice = $('#discogsNotice');
   notice.className = 'muted';
@@ -309,9 +324,7 @@ $('#discogsCheck').onclick = async () => {
     notice.className = j.ok ? 'ok' : 'error';
     log({ ok:j.ok, username:j.identity?.username || null });
   } catch (e) {
-    notice.className = 'error';
-    notice.textContent = e.message;
-    log(e.data || String(e));
+    showDiscogsError(e);
   }
 };
 
@@ -333,9 +346,7 @@ $('#discogsPreview').onclick = async () => {
     notice.className = (j.data?.invalid || 0) > 0 ? 'muted' : 'ok';
     log(j.data);
   } catch (e) {
-    notice.className = 'error';
-    notice.textContent = e.message;
-    log(e.data || String(e));
+    showDiscogsError(e);
   }
 };
 
@@ -357,9 +368,7 @@ $('#discogsApply').onclick = async () => {
     await Promise.all([summary(), inventory()]);
     log(j.data);
   } catch (e) {
-    notice.className = 'error';
-    notice.textContent = e.message;
-    log(e.data || String(e));
+    showDiscogsError(e);
   }
 };
 
