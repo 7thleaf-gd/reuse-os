@@ -243,8 +243,7 @@ test("Hunter search result normalization keeps useful Discogs fields", () => {
   });
 
   assert.deepEqual(item, {
-    release_id: "383be31c-37a0-4e08-8cda-cbcbbc587ae5",
-    provider: "MUSICBRAINZ",
+    release_id: "123",
     title: "Artist - Album",
     year: 1999,
     country: "Japan",
@@ -260,7 +259,8 @@ test("Hunter search result normalization keeps useful Discogs fields", () => {
 
 test("Hunter add validation accepts inventory economics and rejects missing identity", () => {
   const valid = validateHunterAdd({
-    release_id: "123",
+    release_id: "383be31c-37a0-4e08-8cda-cbcbbc587ae5",
+    provider: "MUSICBRAINZ",
     title: "Artist - Album",
     format: "CD",
     cost_jpy: "100",
