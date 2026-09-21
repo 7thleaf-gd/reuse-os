@@ -100,6 +100,20 @@ export async function verifyEbayState(state, secret, now = Date.now()) {
   return { ok: true, issued_at: parsed.t, nonce: parsed.n };
 }
 
+export function verifyStoredEbayState(record, state, now = Date.now()) {
+  const pending = record && record.pending_oauth ? record.pending_oauth : null;
+  if (!pending || !pending.state || !pending.created_at) {
+    return { ok: false, error: "OAUTH_STATE_NOT_STARTED" };
+  }
+  if (String(state || "") !== String(pending.state)) {
+    return { ok: false, error: "INVALID_STATE" };
+  }
+  if (now - Number(pending.created_at) < -60_000 || now - Number(pending.created_at) > STATE_MAX_AGE_MS) {
+    return { ok: false, error: "STATE_EXPIRED" };
+  }
+  return { ok: true };
+}
+
 function connectorDbReady(env) {
   return !!(env && env.DB);
 }
@@ -226,14 +240,16 @@ export async function ebayOAuthStart(request, env) {
   }
 
   const hosts = ebayHosts(record.environment);
-  const state = await signEbayState(env.ADMIN_TOKEN);
+  const state = crypto.randomUUID();
+  record.pending_oauth = { state, created_at: Date.now() };
+  await saveRecord(env, record);
+
   const params = new URLSearchParams({
     client_id: record.client_id,
     redirect_uri: record.runame,
     response_type: "code",
     scope: EBAY_SCOPES.join(" "),
-    state,
-    prompt: "login"
+    state
   });
 
   return json({
@@ -362,9 +378,6 @@ export async function ebayOAuthCallback(request, env) {
 
   const { code, state } = callback;
 
-  const stateCheck = await verifyEbayState(state, env.ADMIN_TOKEN);
-  if (!stateCheck.ok) return callbackHtml(stateCheck);
-
   let record;
   try {
     record = await loadRecord(env);
@@ -372,6 +385,9 @@ export async function ebayOAuthCallback(request, env) {
     return callbackHtml({ ok: false, error: error.message || "EBAY_CONFIG_READ_FAILED" });
   }
   if (!record) return callbackHtml({ ok: false, error: "EBAY_NOT_CONFIGURED" });
+
+  const stateCheck = verifyStoredEbayState(record, state);
+  if (!stateCheck.ok) return callbackHtml(stateCheck);
 
   const exchanged = await ebayTokenRequest(record, {
     grant_type: "authorization_code",
@@ -393,6 +409,7 @@ export async function ebayOAuthCallback(request, env) {
     refresh_expires_at: now + Number(body.refresh_token_expires_in || 0) * 1000,
     scope: EBAY_SCOPES
   };
+  record.pending_oauth = null;
   await saveRecord(env, record);
 
   return callbackHtml({
