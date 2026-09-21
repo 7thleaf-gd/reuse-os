@@ -282,22 +282,24 @@ export function buildVisionQueryCandidates(normalized) {
     if (overlapsOcr) candidates.push(entity);
   }
 
-  // Best guess is fallback only when OCR is absent or it agrees with OCR.
-  if (best) {
-    const agreesWithOcr = rankedText.length === 0 || rankedText.some((line) => {
+  // Best guess is allowed only when it agrees with printed text.
+  // Generic image semantics are not a product identity signal.
+  if (best && rankedText.length > 0) {
+    const agreesWithOcr = rankedText.some((line) => {
       const b = new Set(visionTokens(best));
       return visionTokens(line).some((t) => b.has(t));
     });
     if (agreesWithOcr) candidates.push(best);
   }
 
-  // No useful OCR: fall back to web evidence.
+  // If OCR is empty, fail closed instead of turning generic labels such as
+  // "painting", "art" or "drawing" into a catalog search.
+  // A later photo of the back/spine/barcode can provide identity evidence.
   if (!rankedText.length && !catalog) {
     for (const page of pages) {
-      if (/\s[-–—:]\s/.test(page)) candidates.push(page);
+      const musicLike = /(discogs|musicbrainz|bandcamp|album|ep|single|record|cd|vinyl|lp)/i.test(page);
+      if (musicLike && /\s[-–—:]\s/.test(page)) candidates.push(page);
     }
-    if (entities.length >= 2) candidates.push(entities.slice(0, 3).join(" "));
-    else if (entities[0]) candidates.push(entities[0]);
   }
 
   return uniqueVisionQueries(candidates);
@@ -339,7 +341,7 @@ export async function analyzeHunterImage(request, env) {
       image: { content: arrayBufferToBase64(buffer) },
       features: [
         { type: "WEB_DETECTION", maxResults: 12 },
-        { type: "TEXT_DETECTION" },
+        { type: "DOCUMENT_TEXT_DETECTION" },
         { type: "LOGO_DETECTION", maxResults: 8 }
       ]
     }]
