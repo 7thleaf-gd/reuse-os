@@ -243,7 +243,8 @@ test("Hunter search result normalization keeps useful Discogs fields", () => {
   });
 
   assert.deepEqual(item, {
-    release_id: "123",
+    release_id: "383be31c-37a0-4e08-8cda-cbcbbc587ae5",
+    provider: "MUSICBRAINZ",
     title: "Artist - Album",
     year: 1999,
     country: "Japan",
@@ -274,5 +275,5 @@ test("Hunter add validation accepts inventory economics and rejects missing iden
   assert.equal(valid.value.lowest_market_jpy, 1800);
 
   assert.equal(validateHunterAdd({ title: "x" }).ok, false);
-  assert.equal(validateHunterAdd({ release_id: "123" }).ok, false);
+  assert.equal(validateHunterAdd({ release_id: "383be31c-37a0-4e08-8cda-cbcbbc587ae5" }).ok, false);
 });
