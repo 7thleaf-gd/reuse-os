@@ -6,7 +6,8 @@ import {
   encryptEbayPayload,
   decryptEbayPayload,
   signEbayState,
-  verifyEbayState
+  verifyEbayState,
+  classifyEbayCallback
 } from "../src/ebay.js";
 
 test("eBay scopes cover listing, account policies and fulfillment without buy/PII scopes", () => {
@@ -58,4 +59,21 @@ test("eBay connector payload encrypts and decrypts without plaintext storage", a
   await assert.rejects(
     () => decryptEbayPayload(encrypted.ciphertext, encrypted.iv, "wrong-secret")
   );
+});
+
+
+test("eBay callback classifier distinguishes OAuth, direct callback, and legacy Auth'n'Auth", () => {
+  const oauth = classifyEbayCallback("https://example.test/cb?code=abc&state=xyz");
+  assert.equal(oauth.ok, true);
+  assert.equal(oauth.type, "oauth");
+
+  const direct = classifyEbayCallback("https://example.test/cb");
+  assert.equal(direct.ok, false);
+  assert.equal(direct.type, "missing");
+  assert.equal(direct.error, "OAUTH_CODE_OR_STATE_MISSING");
+
+  const legacy = classifyEbayCallback("https://example.test/cb?isAuthSuccessful=true&ebaytkn=legacy");
+  assert.equal(legacy.ok, false);
+  assert.equal(legacy.type, "legacy_authnauth");
+  assert.equal(legacy.error, "LEGACY_AUTHNAUTH_CALLBACK");
 });
