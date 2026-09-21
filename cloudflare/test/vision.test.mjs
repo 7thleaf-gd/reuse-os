@@ -31,14 +31,14 @@ test("Vision normalization keeps best guesses, entities, OCR and logos", () => {
   assert.equal(result.matching_pages[0].url, "https://example.test/page");
 });
 
-test("Vision query suggestion prefers combined identity signals", () => {
+test("Vision query suggestion prefers OCR identity and catalog numbers", () => {
   assert.equal(
     suggestVisionQuery({
       best_guess_labels: ["Artist Album"],
       web_entities: [{ description: "Artist", score: 1 }],
       ocr_lines: ["Artist", "Album"]
     }),
-    "Artist Album"
+    "Artist"
   );
 
   assert.equal(
@@ -59,7 +59,7 @@ test("Vision query suggestion prefers combined identity signals", () => {
       web_entities: [],
       ocr_lines: ["ARTIST", "ALBUM", "CAT-001"]
     }),
-    "ARTIST ALBUM CAT-001"
+    "CAT-001"
   );
 });
 
@@ -77,7 +77,8 @@ test("Vision candidates avoid generic best guess when stronger identity exists",
     ]
   });
 
-  assert.equal(candidates[0], "Van Der Graaf Generator - Still Life");
+  assert.equal(candidates[0], "CAS 1116");
+  assert.ok(candidates.some((q) => /VAN DER GRAAF GENERATOR/i.test(q)));
   assert.ok(candidates.some((q) => /Van Der Graaf Generator.*Still Life/i.test(q)));
   assert.notEqual(candidates[0], "Still Life");
 });
@@ -90,5 +91,25 @@ test("Vision candidates combine artist-like OCR with generic visual guess", () =
     matching_pages: []
   });
 
-  assert.equal(candidates[0], "OPETH Still Life");
+  assert.equal(candidates[0], "CDVILED183X");
+  assert.ok(candidates.some((q) => /OPETH/i.test(q) && /STILL LIFE/i.test(q)));
+});
+
+
+test("Vision rejects generic art semantics when OCR identifies the record", () => {
+  const candidates = buildVisionQueryCandidates({
+    best_guess_labels: ["Painting Technique for Beginners | Acrylic Painting"],
+    web_entities: [
+      { description: "Art", score: 0.98 },
+      { description: "Painting", score: 0.95 },
+      { description: "Acrylic Paint", score: 0.90 },
+      { description: "Drawing", score: 0.85 }
+    ],
+    ocr_lines: ["Pampas field ass kickers", "Salik"],
+    matching_pages: []
+  });
+
+  assert.equal(candidates[0], "Pampas field ass kickers");
+  assert.ok(candidates.some((q) => /Pampas field ass kickers Salik/i.test(q)));
+  assert.ok(!candidates.some((q) => /Painting Technique|Acrylic Painting/i.test(q)));
 });

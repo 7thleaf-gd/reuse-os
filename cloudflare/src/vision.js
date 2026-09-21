@@ -231,40 +231,74 @@ export function buildVisionQueryCandidates(normalized) {
     .filter((x) => clean(x?.description) && Number(x?.score || 0) >= 0.25)
     .map((x) => compactVisionText(x.description))
     .filter(Boolean);
-  const ocr = (normalized?.ocr_lines || []).map(compactVisionText).filter(Boolean);
+  const ocr = (normalized?.ocr_lines || [])
+    .map(compactVisionText)
+    .filter((line) => line.length >= 3 && line.length <= 100);
   const pages = (normalized?.matching_pages || [])
     .map((x) => compactVisionText(x?.page_title))
     .filter(Boolean);
 
   const candidates = [];
+  const catalog = ocr.find(looksLikeCatalogNumber);
 
-  // Matching page titles often contain the full "Artist - Release" identity.
+  // For record sleeves, printed text is usually a much stronger identity signal than
+  // generic image semantics ("painting", "art", "still life", etc.).
+  const textLines = ocr.filter((line) => !looksLikeCatalogNumber(line));
+  const rankedText = [...textLines].sort((a, b) => {
+    const aWords = visionTokens(a).length;
+    const bWords = visionTokens(b).length;
+    if (aWords !== bWords) return bWords - aWords;
+    return b.length - a.length;
+  });
+
+  // A catalog number is close to a primary key in music catalogs.
+  if (catalog) candidates.push(catalog);
+
+  // Longest OCR line is often artist or artist + title. Put it first when no catno.
+  if (rankedText[0]) candidates.push(rankedText[0]);
+
+  // Artist + title pair, retaining OCR spelling as evidence.
+  if (rankedText.length >= 2) {
+    candidates.push(rankedText.slice(0, 2).join(" "));
+  }
+
+  // Matching-page titles are useful only when they agree with OCR.
   for (const page of pages) {
-    if (best && containsAllWords(page, best)) candidates.push(page);
-    else if (/\s[-–—:]\s/.test(page)) candidates.push(page);
+    const overlapsOcr = rankedText.some((line) => {
+      const p = new Set(visionTokens(page));
+      const tokens = visionTokens(line);
+      return tokens.length > 0 && tokens.filter((t) => p.has(t)).length >= Math.min(2, tokens.length);
+    });
+    if (overlapsOcr) candidates.push(page);
   }
 
-  // Join a strong web entity with the generic best guess ("Still Life" -> "Opeth Still Life").
-  for (const entity of entities.slice(0, 4)) {
-    if (best && !containsAllWords(entity, best) && !containsAllWords(best, entity)) {
-      candidates.push(entity + " " + best);
+  // Web entities are supporting evidence, not the driver. Require OCR overlap.
+  for (const entity of entities) {
+    const overlapsOcr = rankedText.some((line) => {
+      const e = new Set(visionTokens(entity));
+      const tokens = visionTokens(line);
+      return tokens.some((t) => e.has(t));
+    });
+    if (overlapsOcr) candidates.push(entity);
+  }
+
+  // Best guess is fallback only when OCR is absent or it agrees with OCR.
+  if (best) {
+    const agreesWithOcr = rankedText.length === 0 || rankedText.some((line) => {
+      const b = new Set(visionTokens(best));
+      return visionTokens(line).some((t) => b.has(t));
+    });
+    if (agreesWithOcr) candidates.push(best);
+  }
+
+  // No useful OCR: fall back to web evidence.
+  if (!rankedText.length && !catalog) {
+    for (const page of pages) {
+      if (/\s[-–—:]\s/.test(page)) candidates.push(page);
     }
+    if (entities.length >= 2) candidates.push(entities.slice(0, 3).join(" "));
+    else if (entities[0]) candidates.push(entities[0]);
   }
-
-  // OCR often contains artist/title/catalog number. Pair useful lines with the visual guess.
-  const usefulOcr = ocr.filter((line) => line.length >= 3 && line.length <= 80);
-  for (const line of usefulOcr.slice(0, 6)) {
-    if (best && !containsAllWords(line, best) && !containsAllWords(best, line)) {
-      candidates.push(line + " " + best);
-    }
-  }
-
-  const catalog = usefulOcr.find(looksLikeCatalogNumber);
-  if (best && catalog) candidates.push(best + " " + catalog);
-
-  if (entities.length >= 2) candidates.push(entities.slice(0, 3).join(" "));
-  if (best) candidates.push(best);
-  if (usefulOcr.length >= 2) candidates.push(usefulOcr.slice(0, 3).join(" "));
 
   return uniqueVisionQueries(candidates);
 }
