@@ -63,9 +63,10 @@
       <input id="hunterPhoto" type="file" accept="image/*" capture="environment" style="display:none">
     </div>
     <div id="hunterVisionResult" class="muted" style="display:none;margin-top:8px"></div>
+    <div id="hunterVisionQueries" class="row" style="display:none;margin-top:8px"></div>
     <details id="visionSetup" style="margin-top:10px">
       <summary style="cursor:pointer;font-weight:700">Google Vision設定</summary>
-      <div class="muted" style="margin:8px 0">Cloud Vision APIキーを暗号化してD1へ保存。Worker Secretがある場合はそちらを優先します。キー値は再表示しません。</div>
+      <div class="muted" style="margin:8px 0">初回だけ設定。Cloud Vision APIキーは暗号化してD1へ保存し、以後は再入力不要。Worker Secretがある場合はそちらを優先します。キー値は再表示しません。</div>
       <div class="row">
         <input id="visionApiKey" class="grow" type="password" autocomplete="off" placeholder="Google Cloud Vision API key">
         <button id="visionSave" class="ghost">Vision設定保存</button>
@@ -394,24 +395,32 @@ async function runHunterVision(file) {
     });
     const v = j.vision || {};
     const guess = j.suggested_query || '';
+    const queries = Array.isArray(j.candidate_queries) ? j.candidate_queries : (guess ? [guess] : []);
     const ocr = (v.ocr_lines || []).slice(0, 4).join(' / ');
     const entities = (v.web_entities || []).slice(0, 4).map(x => x.description).join(' / ');
     resultBox.style.display = 'block';
     resultBox.textContent = [
-      guess ? '候補: ' + guess : null,
+      guess ? '第一候補: ' + guess : null,
       entities ? 'Web: ' + entities : null,
       ocr ? 'OCR: ' + ocr : null
     ].filter(Boolean).join('｜') || '画像は読めましたが検索語を作れませんでした。';
-    if (guess) {
-      $('#hunterQuery').value = guess;
+
+    const qbox = $('#hunterVisionQueries');
+    if (queries.length) {
+      qbox.style.display = 'flex';
+      qbox.innerHTML = queries.map((q, i) =>
+        '<button class="ghost hunterVisionQuery" data-q="'+escapeHtml(q)+'">'+(i === 0 ? '候補1: ' : '')+escapeHtml(q)+'</button>'
+      ).join('');
+      $('#hunterQuery').value = queries[0];
       notice.className = 'ok';
-      notice.textContent = '画像認識OK。Discogs候補を検索します…';
-      await runHunterSearch();
+      notice.textContent = '画像認識OK。候補を選んで「探す」。誤認識なら別候補をタップ。';
     } else {
+      qbox.style.display = 'none';
+      qbox.innerHTML = '';
       notice.className = 'muted';
       notice.textContent = '画像認識は完了。検索語を手で補ってください。';
     }
-    log({ suggested_query:guess || null, vision:v });
+    log({ suggested_query:guess || null, candidate_queries:queries, vision:v });
   } catch (e) {
     notice.className = 'error';
     if (e?.data?.error === 'VISION_NOT_CONFIGURED') {
@@ -565,6 +574,14 @@ $('#hunterVisionPhoto').onchange = async () => {
     $('#hunterVisionPhoto').value = '';
   }
 };
+
+$('#hunterVisionQueries').addEventListener('click', (e) => {
+  const button = e.target.closest('.hunterVisionQuery');
+  if (!button) return;
+  $('#hunterQuery').value = button.dataset.q || '';
+  $('#hunterNotice').className = 'ok';
+  $('#hunterNotice').textContent = '検索候補を切替えました。「探す」でDiscogs照合。';
+});
 
 $('#hunterSearch').onclick = runHunterSearch;
 $('#hunterQuery').addEventListener('keydown', (e) => {
