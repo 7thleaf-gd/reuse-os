@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   normalizeVisionAnnotation,
-  suggestVisionQuery
+  suggestVisionQuery,
+  buildVisionQueryCandidates
 } from "../src/vision.js";
 
 test("Vision normalization keeps best guesses, entities, OCR and logos", () => {
@@ -60,4 +61,34 @@ test("Vision query suggestion prefers best guess, then entities, then OCR", () =
     }),
     "ARTIST ALBUM CAT-001"
   );
+});
+
+
+test("Vision candidates avoid generic best guess when stronger identity exists", () => {
+  const candidates = buildVisionQueryCandidates({
+    best_guess_labels: ["Still Life"],
+    web_entities: [
+      { description: "Van Der Graaf Generator", score: 0.91 },
+      { description: "Still Life", score: 0.88 }
+    ],
+    ocr_lines: ["VAN DER GRAAF GENERATOR", "STILL LIFE", "CAS 1116"],
+    matching_pages: [
+      { page_title: "Van Der Graaf Generator - Still Life | Discogs", url: "https://www.discogs.com/release/1" }
+    ]
+  });
+
+  assert.equal(candidates[0], "Van Der Graaf Generator - Still Life");
+  assert.ok(candidates.some((q) => /Van Der Graaf Generator.*Still Life/i.test(q)));
+  assert.notEqual(candidates[0], "Still Life");
+});
+
+test("Vision candidates combine artist-like OCR with generic visual guess", () => {
+  const candidates = buildVisionQueryCandidates({
+    best_guess_labels: ["Still Life"],
+    web_entities: [],
+    ocr_lines: ["OPETH", "STILL LIFE", "CDVILED183X"],
+    matching_pages: []
+  });
+
+  assert.equal(candidates[0], "OPETH Still Life");
 });
