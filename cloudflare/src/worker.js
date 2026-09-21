@@ -218,7 +218,21 @@ async function discogsRequest(env, path, init = {}) {
   const text = await response.text();
   let body = null;
   try { body = text ? JSON.parse(text) : null; } catch { body = text; }
-  return { ok: response.ok, status: response.status, body };
+
+  const retryAfterRaw = response.headers.get("retry-after");
+  const retryAfter = retryAfterRaw && /^\d+$/.test(retryAfterRaw) ? Number(retryAfterRaw) : null;
+  const remainingRaw = response.headers.get("x-discogs-ratelimit-remaining");
+  const remaining = remainingRaw && /^\d+$/.test(remainingRaw) ? Number(remainingRaw) : null;
+
+  return {
+    ok: response.ok,
+    status: response.status,
+    body,
+    rate_limit: {
+      remaining,
+      retry_after: retryAfter
+    }
+  };
 }
 
 export async function discogsIdentity(env) {
@@ -252,6 +266,27 @@ export function normalizeDiscogsListing(listing) {
   };
 }
 
+async function discogsInventoryPage(env, username, { page = 1, perPage = 50 } = {}) {
+  const safePage = Math.max(1, Math.min(10000, Number(page) || 1));
+  const safePerPage = Math.max(1, Math.min(100, Number(perPage) || 50));
+  const path = `/users/${encodeURIComponent(username)}/inventory?status=For%20Sale&page=${safePage}&per_page=${safePerPage}`;
+  const result = await discogsRequest(env, path);
+  if (!result.ok) return result;
+
+  return {
+    ok: true,
+    status: result.status,
+    rate_limit: result.rate_limit,
+    body: {
+      username,
+      pagination: result.body?.pagination || null,
+      listings: Array.isArray(result.body?.listings)
+        ? result.body.listings.map(normalizeDiscogsListing)
+        : []
+    }
+  };
+}
+
 export async function discogsForSale(env, { page = 1, perPage = 50 } = {}) {
   const identity = await discogsIdentity(env);
   if (!identity.ok) return identity;
@@ -259,26 +294,7 @@ export async function discogsForSale(env, { page = 1, perPage = 50 } = {}) {
   const username = identity.body?.username;
   if (!username) return { ok: false, status: 502, error: "DISCOGS_IDENTITY_USERNAME_MISSING" };
 
-  const safePage = Math.max(1, Math.min(10000, Number(page) || 1));
-  const safePerPage = Math.max(1, Math.min(100, Number(perPage) || 50));
-  const path = `/users/${encodeURIComponent(username)}/inventory?status=For%20Sale&page=${safePage}&per_page=${safePerPage}`;
-  const result = await discogsRequest(env, path);
-
-  if (!result.ok) return result;
-
-  const listings = Array.isArray(result.body?.listings)
-    ? result.body.listings.map(normalizeDiscogsListing)
-    : [];
-
-  return {
-    ok: true,
-    status: result.status,
-    body: {
-      username,
-      pagination: result.body?.pagination || null,
-      listings
-    }
-  };
+  return discogsInventoryPage(env, username, { page, perPage });
 }
 
 function discogsSku(listing) {
@@ -340,7 +356,13 @@ async function syncDiscogsForSale(env, { maxPages = 20, perPage = 100, apply = f
   const safeMaxPages = Math.max(1, Math.min(20, Number(maxPages) || 20));
   const safePerPage = Math.max(1, Math.min(100, Number(perPage) || 100));
 
-  const first = await discogsForSale(env, { page: 1, perPage: safePerPage });
+  const identity = await discogsIdentity(env);
+  if (!identity.ok) return identity;
+
+  const username = identity.body?.username;
+  if (!username) return { ok: false, status: 502, error: "DISCOGS_IDENTITY_USERNAME_MISSING" };
+
+  const first = await discogsInventoryPage(env, username, { page: 1, perPage: safePerPage });
   if (!first.ok) return first;
 
   const pages = Math.max(1, Math.min(
@@ -350,7 +372,7 @@ async function syncDiscogsForSale(env, { maxPages = 20, perPage = 100, apply = f
   const all = [...(first.body?.listings || [])];
 
   for (let page = 2; page <= pages; page += 1) {
-    const next = await discogsForSale(env, { page, perPage: safePerPage });
+    const next = await discogsInventoryPage(env, username, { page, perPage: safePerPage });
     if (!next.ok) return next;
     all.push(...(next.body?.listings || []));
   }
@@ -365,7 +387,7 @@ async function syncDiscogsForSale(env, { maxPages = 20, perPage = 100, apply = f
       status: 200,
       body: {
         mode: "dry-run",
-        username: first.body?.username || null,
+        username,
         pages_read: pages,
         listings_seen: all.length,
         valid: valid.length,
@@ -465,7 +487,7 @@ async function syncDiscogsForSale(env, { maxPages = 20, perPage = 100, apply = f
     status: conflicts.length === 0 ? 200 : 409,
     body: {
       mode: "apply",
-      username: first.body?.username || null,
+      username,
       pages_read: pages,
       listings_seen: all.length,
       valid: valid.length,
@@ -933,7 +955,7 @@ export default {
       const perPage = Number(url.searchParams.get("per_page") || 50);
       const r = await discogsForSale(env, { page, perPage });
       return json(
-        { ok: r.ok, status: r.status, data: r.ok ? r.body : null, error: r.ok ? null : r.error || r.body },
+        { ok: r.ok, status: r.status, data: r.ok ? r.body : null, error: r.ok ? null : r.error || r.body, rate_limit: r.rate_limit || null },
         r.ok ? 200 : r.status || 502
       );
     }
