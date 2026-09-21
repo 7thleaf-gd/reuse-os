@@ -184,22 +184,93 @@ export function normalizeVisionAnnotation(annotation) {
   };
 }
 
-export function suggestVisionQuery(normalized) {
-  const best = normalized?.best_guess_labels?.find(Boolean);
-  if (best && best.length >= 3) return best.slice(0, 180);
+function compactVisionText(value) {
+  return clean(value)
+    .replace(/\s+/g, " ")
+    .replace(/\s*[|｜]\s*(Discogs|Spotify|Apple Music|Bandcamp|Amazon.*)$/i, "")
+    .replace(/\s*[-–—]\s*(Discogs|Wikipedia|YouTube)$/i, "")
+    .trim();
+}
 
+function visionTokens(value) {
+  return compactVisionText(value)
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .split(/\s+/)
+    .filter((x) => x.length >= 2);
+}
+
+function containsAllWords(haystack, needle) {
+  const h = new Set(visionTokens(haystack));
+  const n = visionTokens(needle);
+  return n.length > 0 && n.every((x) => h.has(x));
+}
+
+function looksLikeCatalogNumber(value) {
+  const s = compactVisionText(value);
+  return /^[A-Z0-9]{1,8}[-_. ]?[A-Z0-9]{2,10}$/i.test(s) && /\d/.test(s);
+}
+
+function uniqueVisionQueries(values) {
+  const out = [];
+  const seen = new Set();
+  for (const value of values) {
+    const q = compactVisionText(value).slice(0, 180);
+    if (!q || q.length < 3) continue;
+    const key = q.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(q);
+  }
+  return out.slice(0, 6);
+}
+
+export function buildVisionQueryCandidates(normalized) {
+  const best = compactVisionText(normalized?.best_guess_labels?.find(Boolean) || "");
   const entities = (normalized?.web_entities || [])
-    .filter((x) => x.description && x.score >= 0.35)
-    .map((x) => x.description);
+    .filter((x) => clean(x?.description) && Number(x?.score || 0) >= 0.25)
+    .map((x) => compactVisionText(x.description))
+    .filter(Boolean);
+  const ocr = (normalized?.ocr_lines || []).map(compactVisionText).filter(Boolean);
+  const pages = (normalized?.matching_pages || [])
+    .map((x) => compactVisionText(x?.page_title))
+    .filter(Boolean);
 
-  if (entities.length >= 2) return entities.slice(0, 3).join(" ").slice(0, 180);
-  if (entities.length === 1) return entities[0].slice(0, 180);
+  const candidates = [];
 
-  const usefulOcr = (normalized?.ocr_lines || [])
-    .filter((line) => line.length >= 3 && line.length <= 80)
-    .slice(0, 3);
+  // Matching page titles often contain the full "Artist - Release" identity.
+  for (const page of pages) {
+    if (best && containsAllWords(page, best)) candidates.push(page);
+    else if (/\s[-–—:]\s/.test(page)) candidates.push(page);
+  }
 
-  return usefulOcr.join(" ").slice(0, 180) || null;
+  // Join a strong web entity with the generic best guess ("Still Life" -> "Opeth Still Life").
+  for (const entity of entities.slice(0, 4)) {
+    if (best && !containsAllWords(entity, best) && !containsAllWords(best, entity)) {
+      candidates.push(entity + " " + best);
+    }
+  }
+
+  // OCR often contains artist/title/catalog number. Pair useful lines with the visual guess.
+  const usefulOcr = ocr.filter((line) => line.length >= 3 && line.length <= 80);
+  for (const line of usefulOcr.slice(0, 6)) {
+    if (best && !containsAllWords(line, best) && !containsAllWords(best, line)) {
+      candidates.push(line + " " + best);
+    }
+  }
+
+  const catalog = usefulOcr.find(looksLikeCatalogNumber);
+  if (best && catalog) candidates.push(best + " " + catalog);
+
+  if (entities.length >= 2) candidates.push(entities.slice(0, 3).join(" "));
+  if (best) candidates.push(best);
+  if (usefulOcr.length >= 2) candidates.push(usefulOcr.slice(0, 3).join(" "));
+
+  return uniqueVisionQueries(candidates);
+}
+
+export function suggestVisionQuery(normalized) {
+  return buildVisionQueryCandidates(normalized)[0] || null;
 }
 
 export async function analyzeHunterImage(request, env) {
@@ -272,12 +343,14 @@ export async function analyzeHunterImage(request, env) {
   }
 
   const normalized = normalizeVisionAnnotation(annotation);
-  const suggestedQuery = suggestVisionQuery(normalized);
+  const candidateQueries = buildVisionQueryCandidates(normalized);
+  const suggestedQuery = candidateQueries[0] || null;
 
   return json({
     ok: true,
     source: resolved.source,
     suggested_query: suggestedQuery,
+    candidate_queries: candidateQueries,
     vision: normalized
   });
 }
