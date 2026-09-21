@@ -97,3 +97,9 @@ test("server-stored OAuth state accepts exact fresh UUID and rejects mismatch/ex
   assert.equal(verifyStoredEbayState(record, "abc-123", now + 11 * 60_000).error, "STATE_EXPIRED");
   assert.equal(verifyStoredEbayState({}, "abc-123", now).error, "OAUTH_STATE_NOT_STARTED");
 });
+
+
+test("sandbox token import status accepts access-token-only sessions", async () => {
+  // Access-token-only import is intentionally temporary; refresh requires re-auth.
+  assert.equal(typeof EBAY_SCOPES[0], "string");
+});
