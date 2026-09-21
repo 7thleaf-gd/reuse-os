@@ -8,7 +8,9 @@ import {
   validateSaleEvent,
   nextInventoryAfterSale,
   normalizeListingStatus,
-  shouldClearStopPending
+  shouldClearStopPending,
+  normalizeDiscogsListing,
+  discogsImportPlan
 } from "../src/worker.js";
 
 test("Discogs auth header is built from secret without logging it", () => {
@@ -127,4 +129,97 @@ test("stop queue clears only when sold item has no listed channels left", () => 
   assert.equal(shouldClearStopPending("SOLD", "STOP_PENDING", 1), false);
   assert.equal(shouldClearStopPending("AVAILABLE", "STOP_PENDING", 0), false);
   assert.equal(shouldClearStopPending("SOLD", "SYNCED", 0), false);
+});
+
+
+test("Discogs listing normalization keeps only fields Reuse OS needs", () => {
+  const listing = normalizeDiscogsListing({
+    id: 12345,
+    status: "For Sale",
+    condition: "Mint (M)",
+    sleeve_condition: "Mint (M)",
+    location: "LIGHT-CD-BOX1",
+    external_id: "LIGHT-001",
+    quantity: 4,
+    price: { value: "1500.00", currency: "JPY" },
+    release: {
+      id: 987,
+      description: "Pampas Field Ass Kickers - Light!",
+      format: ["CD", "EP"]
+    },
+    comments: "label stock",
+    uri: "https://www.discogs.com/sell/item/12345"
+  });
+
+  assert.deepEqual(listing, {
+    listing_id: "12345",
+    release_id: "987",
+    external_id: "LIGHT-001",
+    title: "Pampas Field Ass Kickers - Light!",
+    format: "CD, EP",
+    media_condition: "Mint (M)",
+    sleeve_condition: "Mint (M)",
+    price: 1500,
+    currency: "JPY",
+    quantity: 4,
+    status: "For Sale",
+    location: "LIGHT-CD-BOX1",
+    comments: "label stock",
+    uri: "https://www.discogs.com/sell/item/12345"
+  });
+});
+
+test("Discogs import plan is deterministic and non-destructive", () => {
+  const plan = discogsImportPlan({
+    listing_id: "12345",
+    release_id: "987",
+    external_id: null,
+    title: "Pampas Field Ass Kickers - Light!",
+    format: "CD",
+    media_condition: "Mint (M)",
+    sleeve_condition: "Mint (M)",
+    price: 1500,
+    currency: "JPY",
+    quantity: 2,
+    status: "For Sale",
+    location: "LIGHT-CD-BOX1",
+    comments: null,
+    uri: "https://www.discogs.com/sell/item/12345"
+  });
+
+  assert.equal(plan.ok, true);
+  assert.equal(plan.value.sku, "DISC-12345");
+  assert.equal(plan.value.inventory.price_jpy, 1500);
+  assert.equal(plan.value.inventory.quantity, 2);
+  assert.equal(plan.value.channel.listing_status, "LISTED");
+  assert.equal(plan.value.channel.external_id, "12345");
+});
+
+test("Discogs import plan never labels non-JPY source price as JPY", () => {
+  const plan = discogsImportPlan({
+    listing_id: "9",
+    title: "Foreign currency listing",
+    price: 20,
+    currency: "USD",
+    status: "For Sale"
+  });
+
+  assert.equal(plan.ok, true);
+  assert.equal(plan.value.inventory.price_jpy, null);
+  assert.equal(plan.value.channel.price_jpy, null);
+  assert.match(plan.value.channel.last_note, /source_currency=USD/);
+});
+
+test("Discogs import plan prefers safe seller external_id as SKU", () => {
+  const plan = discogsImportPlan({
+    listing_id: "10",
+    external_id: "STORE:CD-10",
+    title: "Mapped listing",
+    currency: "JPY",
+    price: 1000,
+    status: "For Sale"
+  });
+
+  assert.equal(plan.ok, true);
+  assert.equal(plan.value.sku, "STORE:CD-10");
 });
