@@ -156,16 +156,18 @@ function connectorPublicStatus(record, request) {
   const origin = new URL(request.url).origin;
   const tokens = record && record.tokens ? record.tokens : null;
   const now = Date.now();
+  const accessValid = !!(tokens && tokens.access_token && Number(tokens.access_expires_at || 0) > now);
   return {
     ok: true,
     configured: !!(record && record.client_id && record.client_secret && record.runame),
-    connected: !!(tokens && tokens.refresh_token),
+    connected: !!(tokens && (tokens.refresh_token || accessValid)),
     environment: safeEnvironment(record && record.environment),
     callback_url: origin + "/oauth/ebay/callback",
     scopes: EBAY_SCOPES,
     client_id_tail: record && record.client_id ? String(record.client_id).slice(-8) : null,
     runame: record && record.runame ? record.runame : null,
-    access_token_valid: !!(tokens && tokens.access_token && Number(tokens.access_expires_at || 0) > now),
+    access_token_valid: accessValid,
+    refresh_token_present: !!(tokens && tokens.refresh_token),
     access_expires_at: tokens && tokens.access_expires_at ? tokens.access_expires_at : null,
     refresh_expires_at: tokens && tokens.refresh_expires_at ? tokens.refresh_expires_at : null
   };
@@ -222,6 +224,55 @@ export async function ebayOAuthStatus(request, env) {
   } catch (error) {
     return json({ ok: false, error: error.message || "EBAY_STATUS_FAILED" }, 500);
   }
+}
+
+export async function importEbaySandboxToken(request, env) {
+  if (!connectorDbReady(env)) return json({ ok: false, error: "D1_NOT_CONFIGURED" }, 503);
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return json({ ok: false, error: "INVALID_JSON_BODY" }, 400);
+  }
+
+  const accessToken = clean(body.access_token);
+  const refreshToken = clean(body.refresh_token);
+  const expiresIn = Number(body.expires_in || 7200);
+  const refreshExpiresIn = Number(body.refresh_token_expires_in || 0);
+
+  if (!accessToken) return json({ ok: false, error: "EBAY_ACCESS_TOKEN_REQUIRED" }, 400);
+  if (!Number.isFinite(expiresIn) || expiresIn <= 0) {
+    return json({ ok: false, error: "INVALID_EXPIRES_IN" }, 400);
+  }
+
+  let record;
+  try {
+    record = await loadRecord(env);
+  } catch (error) {
+    return json({ ok: false, error: error.message || "EBAY_CONFIG_READ_FAILED" }, 500);
+  }
+  if (!record) return json({ ok: false, error: "EBAY_NOT_CONFIGURED" }, 409);
+  if (safeEnvironment(record.environment) !== "sandbox") {
+    return json({ ok: false, error: "SANDBOX_ONLY_TOKEN_IMPORT" }, 409);
+  }
+
+  const now = Date.now();
+  record.tokens = {
+    access_token: accessToken,
+    refresh_token: refreshToken || null,
+    access_expires_at: now + expiresIn * 1000,
+    refresh_expires_at: refreshToken && refreshExpiresIn > 0 ? now + refreshExpiresIn * 1000 : null,
+    scope: EBAY_SCOPES,
+    source: "developer_portal_import"
+  };
+  await saveRecord(env, record);
+
+  return json({
+    ok: true,
+    connected: true,
+    environment: "sandbox",
+    access_token_valid: true,
+    refresh_token_present: !!refreshToken,
+    source: "developer_portal_import"
+  });
 }
 
 export async function ebayOAuthStart(request, env) {
@@ -420,7 +471,7 @@ export async function ebayOAuthCallback(request, env) {
 
 async function getEbayAccessToken(env) {
   const record = await loadRecord(env);
-  if (!record || !record.tokens || !record.tokens.refresh_token) {
+  if (!record || !record.tokens) {
     return { ok: false, error: "EBAY_NOT_CONNECTED" };
   }
 
@@ -428,6 +479,10 @@ async function getEbayAccessToken(env) {
   if (record.tokens.access_token &&
       Number(record.tokens.access_expires_at || 0) - ACCESS_REFRESH_MARGIN_MS > now) {
     return { ok: true, token: record.tokens.access_token, record };
+  }
+
+  if (!record.tokens.refresh_token) {
+    return { ok: false, error: "EBAY_ACCESS_TOKEN_EXPIRED_REAUTHORIZE" };
   }
 
   const refreshed = await ebayTokenRequest(record, {

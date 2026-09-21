@@ -4,7 +4,8 @@ import {
   ebayOAuthStart,
   ebayOAuthCallback,
   ebayPrivileges,
-  disconnectEbay
+  disconnectEbay,
+  importEbaySandboxToken
 } from "./ebay.js";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
@@ -652,6 +653,10 @@ export default {
 
     if (pathname === "/api/connectors/ebay/oauth/start" && request.method === "GET") {
       return ebayOAuthStart(request, env);
+    }
+
+    if (pathname === "/api/connectors/ebay/tokens/import" && request.method === "POST") {
+      return importEbaySandboxToken(request, env);
     }
 
     if (pathname === "/api/connectors/ebay/privileges" && request.method === "GET") {
