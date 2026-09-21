@@ -50,10 +50,10 @@
 
   <section class="card" style="margin-top:12px">
     <div class="row" style="justify-content:space-between;align-items:center">
-      <b style="margin:0">Hunter Mode <span class="pill">v0.2</span></b>
+      <b style="margin:0">Hunter Mode <span class="pill">v0.5</span></b>
       <span id="visionState" class="pill">Vision確認中</span>
     </div>
-    <div class="muted" style="margin:8px 0 10px">ジャケ撮影 / バーコード / アーティスト / タイトル → 候補特定 → Discogs相場 → 仕入れ判断 → 在庫へ。eBay相場は認証復旧後に横並び追加。</div>
+    <div class="muted" style="margin:8px 0 10px">ジャケ撮影 / バーコード / アーティスト / タイトル → MusicBrainzで作品特定 → 仕入れ判断 → 在庫へ。Discogs/eBayは相場・販路の補助レイヤー。</div>
     <div class="row">
       <input id="hunterQuery" class="grow" placeholder="バーコード / アーティスト / タイトル" enterkeyhint="search">
       <button id="hunterSearch">探す</button>
@@ -265,10 +265,11 @@ let hunterSelected = null;
 let hunterStats = null;
 
 function hunterRateLimitMessage(e) {
-  const retry = e?.data?.rate_limit?.retry_after;
-  return e?.data?.status === 429
-    ? (retry ? `Discogsレート制限中。約${retry}秒後に再試行。` : 'Discogsレート制限中。少し待って再試行。')
-    : (e?.message || 'Hunter検索エラー');
+  const retry = e?.data?.retry_after;
+  if (e?.data?.status === 503) {
+    return retry ? `MusicBrainz混雑中。約${retry}秒後に再試行。` : 'MusicBrainz混雑中。少し待って再試行。';
+  }
+  return e?.message || 'Hunter検索エラー';
 }
 
 function renderHunterResults(items) {
@@ -297,7 +298,7 @@ async function runHunterSearch() {
     return;
   }
   notice.className = 'muted';
-  notice.textContent = 'Discogsカタログ検索中…';
+  notice.textContent = 'MusicBrainzで作品特定中…';
   $('#hunterPick').style.display = 'none';
   hunterSelected = null;
   hunterStats = null;
@@ -309,7 +310,7 @@ async function runHunterSearch() {
     });
     renderHunterResults(j.data?.items || []);
     notice.className = 'ok';
-    notice.textContent = `候補 ${j.data?.count || 0}件` + (j.data?.barcode ? ' / barcode ' + j.data.barcode : '');
+    notice.textContent = `MusicBrainz候補 ${j.data?.count || 0}件` + (j.data?.barcode ? ' / barcode ' + j.data.barcode : '') + (j.data?.cache === 'HIT' ? ' / cache' : '');
     log(j.data);
   } catch (e) {
     notice.className = 'error';
@@ -324,24 +325,14 @@ async function selectHunter(index) {
   hunterSelected = item;
   hunterStats = null;
   $('#hunterTitle').textContent = item.title || '';
-  $('#hunterMeta').textContent = [item.year,item.country,item.format,item.label,item.catno,item.barcode].filter(Boolean).join(' · ');
+  $('#hunterMeta').textContent = [item.year,item.country,item.format,item.label,item.catno,item.barcode,item.score != null ? 'MB score ' + item.score : null].filter(Boolean).join(' · ');
   $('#hunterCover').src = item.cover_image || item.thumb || '';
-  $('#hunterMarket').textContent = 'Discogs相場を確認中…';
+  $('#hunterCover').style.visibility = 'visible';
+  $('#hunterCover').onerror = () => { $('#hunterCover').style.visibility = 'hidden'; };
+  $('#hunterMarket').textContent = '作品特定: MusicBrainz / 相場はDiscogs・eBay補助レイヤーから後付け';
   $('#hunterPick').style.display = 'block';
   $('#hunterPrice').value = '';
   updateHunterMargin();
-  try {
-    const j = await api('/api/hunter/stats/' + encodeURIComponent(item.release_id));
-    hunterStats = j.data || null;
-    const low = hunterStats?.lowest_price_jpy;
-    $('#hunterMarket').textContent = low == null
-      ? `出品数 ${hunterStats?.num_for_sale ?? '—'} / 最安値なし`
-      : `最安値 ${yen(low)} / 出品数 ${hunterStats?.num_for_sale ?? '—'}`;
-    if (low != null) $('#hunterPrice').value = low;
-    updateHunterMargin();
-  } catch (e) {
-    $('#hunterMarket').textContent = hunterRateLimitMessage(e);
-  }
 }
 
 function updateHunterMargin() {
@@ -632,6 +623,7 @@ $('#hunterAdd').onclick = async () => {
       headers: {'content-type':'application/json'},
       body: JSON.stringify({
         release_id: hunterSelected.release_id,
+        provider: hunterSelected.provider || 'MUSICBRAINZ',
         title: hunterSelected.title,
         format: hunterSelected.format,
         source_url: hunterSelected.uri,
