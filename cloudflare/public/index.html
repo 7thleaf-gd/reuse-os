@@ -69,6 +69,14 @@
       <button id="ebayTest" class="ghost">接続テスト</button>
       <button id="ebayDisconnect" class="ghost">接続解除</button>
     </div>
+    <details style="margin-top:12px">
+      <summary style="cursor:pointer;font-weight:700">Sandbox token直接取込（OAuth callback回避）</summary>
+      <div class="muted" style="margin:8px 0">eBay Developer Portalの「Get a User Token Here」で取得したSandbox User Tokenを貼る。画面へ再表示しません。</div>
+      <div class="row">
+        <input id="ebayAccessToken" class="grow" type="password" autocomplete="off" placeholder="Sandbox User Access Token">
+        <button id="ebayImportToken" class="ghost">Token取込</button>
+      </div>
+    </details>
     <div id="ebayNotice" class="muted" style="margin-top:8px"></div>
   </section>
 
@@ -281,6 +289,33 @@ $('#ebayConnect').onclick = async () => {
     notice.textContent = 'eBay認可画面を開きました。認可後、この画面へ戻って「更新」を押してください。';
     log({ environment: j.environment, callback_url: j.callback_url, scopes: j.scopes });
     window.open(j.auth_url, '_blank', 'noopener');
+  } catch (e) {
+    notice.className = 'error';
+    notice.textContent = e.message;
+    log(e.data || String(e));
+  }
+};
+$('#ebayImportToken').onclick = async () => {
+  const notice = $('#ebayNotice');
+  const accessToken = $('#ebayAccessToken').value.trim();
+  if (!accessToken) {
+    notice.className = 'error';
+    notice.textContent = 'Sandbox User Access Tokenを入れてください。';
+    return;
+  }
+  notice.className = 'muted';
+  notice.textContent = 'Sandbox tokenを安全に保存中…';
+  try {
+    const j = await api('/api/connectors/ebay/tokens/import', {
+      method: 'POST',
+      headers: {'content-type':'application/json'},
+      body: JSON.stringify({ access_token: accessToken })
+    });
+    $('#ebayAccessToken').value = '';
+    notice.className = 'ok';
+    notice.textContent = 'Sandbox tokenを取り込みました。接続テストできます。';
+    log({ ok:j.ok, environment:j.environment, access_token_valid:j.access_token_valid, refresh_token_present:j.refresh_token_present });
+    await ebayStatus();
   } catch (e) {
     notice.className = 'error';
     notice.textContent = e.message;
