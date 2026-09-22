@@ -12,7 +12,9 @@ import {
   normalizeDiscogsListing,
   discogsImportPlan,
   normalizeHunterSearchResult,
-  validateHunterAdd
+  validateHunterAdd,
+  scoreHunterDiscogsCandidate,
+  calculateHunterEconomics
 } from "../src/worker.js";
 
 test("Discogs auth header is built from secret without logging it", () => {
@@ -276,4 +278,20 @@ test("Hunter add validation accepts inventory economics and rejects missing iden
 
   assert.equal(validateHunterAdd({ title: "x" }).ok, false);
   assert.equal(validateHunterAdd({ release_id: "383be31c-37a0-4e08-8cda-cbcbbc587ae5" }).ok, false);
+});
+
+
+test("Hunter Discogs candidate scoring prefers exact barcode and catalog number", () => {
+  const scored = scoreHunterDiscogsCandidate(
+    { title: "Artist - Album", barcode: "4988000000000", catno: "ABC-001", format: "CD" },
+    { title: "Artist - Album", barcode: "4988000000000", catno: "ABC-001", format: "CD" }
+  );
+  assert.ok(scored.score >= 180);
+  assert.deepEqual(scored.reasons.slice(0, 2), ["barcode", "catno"]);
+});
+
+test("Hunter economics subtracts fee, shipping and packaging", () => {
+  assert.deepEqual(calculateHunterEconomics({
+    cost_jpy: 300, price_jpy: 1500, fee_rate_pct: 10, shipping_jpy: 210, packaging_jpy: 50
+  }), { fee_jpy: 150, estimated_profit_jpy: 790 });
 });

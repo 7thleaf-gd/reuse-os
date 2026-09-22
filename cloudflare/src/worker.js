@@ -304,6 +304,71 @@ export async function hunterSearchDiscogs(env, query) {
   };
 }
 
+export function scoreHunterDiscogsCandidate(item, identity = {}) {
+  const norm = (value) => asTrimmedString(value).toLowerCase().replace(/[^a-z0-9]/g, "");
+  const digits = (value) => asTrimmedString(value).replace(/\D/g, "");
+  let score = 0;
+  const reasons = [];
+  const wantedBarcode = digits(identity.barcode);
+  const itemBarcode = digits(item?.barcode);
+  if (wantedBarcode && itemBarcode && wantedBarcode === itemBarcode) { score += 100; reasons.push("barcode"); }
+  const wantedCatno = norm(identity.catno);
+  const itemCatno = norm(item?.catno);
+  if (wantedCatno && itemCatno && wantedCatno === itemCatno) { score += 70; reasons.push("catno"); }
+  const wantedTitle = norm(identity.title || [identity.artist, identity.release_title].filter(Boolean).join(" "));
+  const itemTitle = norm(item?.title);
+  if (wantedTitle && itemTitle && (itemTitle.includes(wantedTitle) || wantedTitle.includes(itemTitle))) { score += 30; reasons.push("title"); }
+  const wantedFormat = norm(identity.format);
+  const itemFormat = norm(item?.format);
+  if (wantedFormat && itemFormat && (itemFormat.includes(wantedFormat) || wantedFormat.includes(itemFormat))) { score += 10; reasons.push("format"); }
+  return { score, reasons };
+}
+
+export async function hunterMatchDiscogs(env, identity = {}) {
+  const barcode = asTrimmedString(identity.barcode).replace(/[\s-]/g, "");
+  const catno = asTrimmedString(identity.catno);
+  const artist = asTrimmedString(identity.artist);
+  const releaseTitle = asTrimmedString(identity.release_title);
+  const title = asTrimmedString(identity.title);
+  const params = new URLSearchParams({ type: "release", per_page: "12", page: "1" });
+  let queryKind = "text";
+  if (/^\d{8,14}$/.test(barcode)) {
+    params.set("barcode", barcode);
+    queryKind = "barcode";
+  } else if (catno) {
+    params.set("catno", catno);
+    queryKind = "catno";
+  } else {
+    if (artist) params.set("artist", artist);
+    if (releaseTitle) params.set("release_title", releaseTitle);
+    if (!artist && !releaseTitle && title) params.set("q", title);
+  }
+  if (![...params.keys()].some((key) => !["type","per_page","page"].includes(key))) {
+    return { ok: false, status: 400, error: "HUNTER_MARKET_IDENTITY_REQUIRED" };
+  }
+  const result = await discogsRequest(env, "/database/search?" + params.toString());
+  if (!result.ok) return result;
+  const items = (Array.isArray(result.body?.results) ? result.body.results : [])
+    .map(normalizeHunterSearchResult)
+    .filter((x) => x.release_id && x.title)
+    .map((item) => ({ ...item, match: scoreHunterDiscogsCandidate(item, identity) }))
+    .sort((a, b) => b.match.score - a.match.score);
+  return {
+    ok: true, status: result.status, rate_limit: result.rate_limit,
+    body: { provider: "DISCOGS", query_kind: queryKind, count: items.length, items }
+  };
+}
+
+export function calculateHunterEconomics(input = {}) {
+  const cost = Number(input.cost_jpy || 0);
+  const price = Number(input.price_jpy || 0);
+  const feeRate = Number(input.fee_rate_pct || 0);
+  const shipping = Number(input.shipping_jpy || 0);
+  const packaging = Number(input.packaging_jpy || 0);
+  const fee = Math.round(price * feeRate / 100);
+  return { fee_jpy: fee, estimated_profit_jpy: price - cost - fee - shipping - packaging };
+}
+
 export async function hunterDiscogsStats(env, releaseId) {
   const id = asTrimmedString(releaseId);
   if (!/^\d+$/.test(id)) return { ok: false, status: 400, error: "INVALID_RELEASE_ID" };
@@ -349,6 +414,14 @@ export function validateHunterAdd(body) {
   if (!lowest.ok) return lowest;
   const quantity = asInteger(body.quantity == null ? 1 : body.quantity, "quantity", { min: 1 });
   if (!quantity.ok) return quantity;
+  const feeRate = Number(body.fee_rate_pct == null || body.fee_rate_pct === "" ? 0 : body.fee_rate_pct);
+  if (!Number.isFinite(feeRate) || feeRate < 0 || feeRate > 100) return { ok: false, error: "fee_rate_pct must be 0..100" };
+  const shipping = asInteger(body.shipping_jpy == null ? 0 : body.shipping_jpy, "shipping_jpy", { min: 0 });
+  if (!shipping.ok) return shipping;
+  const packaging = asInteger(body.packaging_jpy == null ? 0 : body.packaging_jpy, "packaging_jpy", { min: 0 });
+  if (!packaging.ok) return packaging;
+  const marketNum = asInteger(body.market_num_for_sale, "market_num_for_sale", { min: 0, nullable: true });
+  if (!marketNum.ok) return marketNum;
 
   const sourceUrl = asOptionalString(body.source_url);
   const barcode = asOptionalString(body.barcode);
@@ -367,7 +440,15 @@ export function validateHunterAdd(body) {
       source_url: sourceUrl,
       query_text: asOptionalString(body.query_text),
       barcode,
-      lowest_market_jpy: lowest.value
+      lowest_market_jpy: lowest.value,
+      fee_rate_pct: feeRate,
+      shipping_jpy: shipping.value,
+      packaging_jpy: packaging.value,
+      market_provider: asOptionalString(body.market_provider),
+      market_source_id: asOptionalString(body.market_source_id),
+      market_source_url: asOptionalString(body.market_source_url),
+      market_num_for_sale: marketNum.value,
+      market_fetched_at: asOptionalString(body.market_fetched_at)
     }
   };
 }
@@ -378,6 +459,7 @@ async function hunterAddToInventory(request, env) {
 
   const v = parsed.value;
   const sku = "HUNT-" + v.release_id + "-" + crypto.randomUUID().slice(0, 6).toUpperCase();
+  const economics = calculateHunterEconomics(v);
 
   try {
     await env.DB.batch([
@@ -399,13 +481,15 @@ async function hunterAddToInventory(request, env) {
          (sku,provider,source_id,source_url,query_text,barcode,lowest_market_jpy)
          VALUES (?,?,?,?,?,?,?)`
       ).bind(
-        sku,
-        v.provider,
-        v.release_id,
-        v.source_url,
-        v.query_text,
-        v.barcode,
-        v.lowest_market_jpy
+        sku, v.provider, v.release_id, v.source_url, v.query_text, v.barcode, v.lowest_market_jpy
+      ),
+      env.DB.prepare(
+        `INSERT INTO hunter_economics
+         (sku,fee_rate_pct,fee_jpy,shipping_jpy,packaging_jpy,estimated_profit_jpy,market_provider,market_source_id,market_source_url,market_num_for_sale,market_fetched_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+      ).bind(
+        sku, v.fee_rate_pct, economics.fee_jpy, v.shipping_jpy, v.packaging_jpy, economics.estimated_profit_jpy,
+        v.market_provider, v.market_source_id, v.market_source_url, v.market_num_for_sale, v.market_fetched_at
       )
     ]);
   } catch (error) {
@@ -1085,6 +1169,15 @@ export default {
           error: r.ok ? null : r.error || r.body,
           retry_after: r.retry_after || null
         },
+        r.ok ? 200 : r.status || 502
+      );
+    }
+
+    if (pathname === "/api/hunter/market" && request.method === "POST") {
+      const body = await request.json().catch(() => null);
+      const r = await hunterMatchDiscogs(env, body || {});
+      return json(
+        { ok: r.ok, status: r.status, data: r.ok ? r.body : null, error: r.ok ? null : r.error || r.body, rate_limit: r.rate_limit || null },
         r.ok ? 200 : r.status || 502
       );
     }
