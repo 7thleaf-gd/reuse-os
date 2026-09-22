@@ -96,3 +96,21 @@ CREATE TABLE IF NOT EXISTS hunter_cache (
 );
 
 CREATE INDEX IF NOT EXISTS idx_hunter_cache_expires ON hunter_cache(expires_at);
+
+CREATE TABLE IF NOT EXISTS hunter_economics (
+  sku TEXT PRIMARY KEY,
+  fee_rate_pct REAL NOT NULL DEFAULT 0,
+  fee_jpy INTEGER NOT NULL DEFAULT 0,
+  shipping_jpy INTEGER NOT NULL DEFAULT 0,
+  packaging_jpy INTEGER NOT NULL DEFAULT 0,
+  estimated_profit_jpy INTEGER,
+  market_provider TEXT,
+  market_source_id TEXT,
+  market_source_url TEXT,
+  market_num_for_sale INTEGER,
+  market_fetched_at TEXT,
+  captured_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (sku) REFERENCES inventory(sku) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_hunter_market_source ON hunter_economics(market_provider, market_source_id);

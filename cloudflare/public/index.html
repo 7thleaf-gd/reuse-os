@@ -50,10 +50,10 @@
 
   <section class="card" style="margin-top:12px">
     <div class="row" style="justify-content:space-between;align-items:center">
-      <b style="margin:0">Hunter Mode <span class="pill">v0.5</span></b>
+      <b style="margin:0">Hunter Mode <span class="pill">v0.6</span></b>
       <span id="visionState" class="pill">Vision確認中</span>
     </div>
-    <div class="muted" style="margin:8px 0 10px">ジャケ撮影 / バーコード / アーティスト / タイトル → MusicBrainzで作品特定 → 仕入れ判断 → 在庫へ。Discogs/eBayは相場・販路の補助レイヤー。</div>
+    <div class="muted" style="margin:8px 0 10px">ジャケ撮影 / バーコード / アーティスト / タイトル → MusicBrainzで作品特定 → Discogsで同版候補と出品最安を確認 → 諸経費込み利益 → 在庫へ。</div>
     <div class="row">
       <input id="hunterQuery" class="grow" placeholder="バーコード / アーティスト / タイトル" enterkeyhint="search">
       <button id="hunterSearch">探す</button>
@@ -82,11 +82,16 @@
           <b id="hunterTitle" style="margin:0 0 4px"></b>
           <div id="hunterMeta" class="muted"></div>
           <div id="hunterMarket" style="margin-top:6px"></div>
+          <div class="row" style="margin-top:8px"><button id="hunterMarketLookup" class="ghost">Discogs相場候補</button></div>
+          <div id="hunterMarketCandidates" style="display:grid;gap:6px;margin-top:8px"></div>
         </div>
       </div>
       <div class="form-grid" style="margin-top:10px">
         <input id="hunterCost" inputmode="numeric" placeholder="仕入れ ¥">
-        <input id="hunterPrice" inputmode="numeric" placeholder="売価 ¥">
+        <input id="hunterPrice" inputmode="numeric" placeholder="想定売価 ¥">
+        <input id="hunterFeeRate" inputmode="decimal" placeholder="手数料 %">
+        <input id="hunterShipping" inputmode="numeric" placeholder="送料 ¥">
+        <input id="hunterPackaging" inputmode="numeric" placeholder="梱包 ¥">
         <input id="hunterLocation" placeholder="棚番">
         <input id="hunterQty" inputmode="numeric" value="1" placeholder="数量">
         <button id="hunterAdd">在庫へ追加</button>
@@ -263,6 +268,8 @@ function renderDiscogsPreview(data) {
 let hunterItems = [];
 let hunterSelected = null;
 let hunterStats = null;
+let hunterMarketCandidates = [];
+let hunterMarketEvidence = null;
 
 function hunterRateLimitMessage(e) {
   const retry = e?.data?.retry_after;
@@ -324,24 +331,96 @@ async function selectHunter(index) {
   if (!item) return;
   hunterSelected = item;
   hunterStats = null;
+  hunterMarketCandidates = [];
+  hunterMarketEvidence = null;
   $('#hunterTitle').textContent = item.title || '';
   $('#hunterMeta').textContent = [item.year,item.country,item.format,item.label,item.catno,item.barcode,item.score != null ? 'MB score ' + item.score : null].filter(Boolean).join(' · ');
   $('#hunterCover').src = item.cover_image || item.thumb || '';
   $('#hunterCover').style.visibility = 'visible';
   $('#hunterCover').onerror = () => { $('#hunterCover').style.visibility = 'hidden'; };
-  $('#hunterMarket').textContent = '作品特定: MusicBrainz / 相場はDiscogs・eBay補助レイヤーから後付け';
+  $('#hunterMarket').textContent = '作品特定: MusicBrainz / Discogs同版候補を確認中…';
+  $('#hunterMarketCandidates').innerHTML = '';
   $('#hunterPick').style.display = 'block';
   $('#hunterPrice').value = '';
   updateHunterMargin();
+  await lookupHunterMarket();
+}
+
+function renderHunterMarketCandidates(items) {
+  hunterMarketCandidates = items || [];
+  const box = $('#hunterMarketCandidates');
+  if (!hunterMarketCandidates.length) {
+    box.innerHTML = '<div class="muted">Discogs候補なし。想定売価を手入力して続行できます。</div>';
+    return;
+  }
+  box.innerHTML = hunterMarketCandidates.slice(0,6).map((item,index) => `
+    <button class="ghost hunterMarketCandidate" data-index="${index}" style="text-align:left;width:100%">
+      <b style="display:block;margin:0 0 2px">${escapeHtml(item.title)}</b>
+      <span class="muted">${escapeHtml([item.year,item.country,item.format,item.label,item.catno,item.barcode,'match '+(item.match?.score ?? 0)].filter(Boolean).join(' · '))}</span>
+    </button>`).join('');
+}
+
+async function lookupHunterMarket() {
+  if (!hunterSelected) return;
+  const market = $('#hunterMarket');
+  market.textContent = 'Discogsで同版候補を照合中…';
+  try {
+    const j = await api('/api/hunter/market', {
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({
+        barcode:hunterSelected.barcode, catno:hunterSelected.catno, artist:hunterSelected.artist,
+        release_title:hunterSelected.release_title, title:hunterSelected.title, format:hunterSelected.format
+      })
+    });
+    const items = j.data?.items || [];
+    renderHunterMarketCandidates(items);
+    market.textContent = `Discogs候補 ${items.length}件 / ${j.data?.query_kind || 'text'}照合`;
+    if (items[0]?.match?.score >= 70) await pickHunterMarket(0);
+  } catch (e) {
+    hunterMarketCandidates = [];
+    hunterMarketEvidence = null;
+    $('#hunterMarketCandidates').innerHTML = '<div class="muted">Discogs相場取得失敗。想定売価を手入力して続行できます。</div>';
+    market.textContent = 'Discogs相場は未取得';
+  }
+}
+
+async function pickHunterMarket(index) {
+  const item = hunterMarketCandidates[index];
+  if (!item) return;
+  const market = $('#hunterMarket');
+  market.textContent = 'Discogs出品価格を取得中…';
+  try {
+    const j = await api('/api/hunter/stats/' + encodeURIComponent(item.release_id));
+    hunterStats = j.data || null;
+    hunterMarketEvidence = {
+      provider:'DISCOGS', release_id:item.release_id, source_url:item.uri || null,
+      lowest_price_jpy:hunterStats?.lowest_price_jpy ?? null, num_for_sale:hunterStats?.num_for_sale ?? null,
+      fetched_at:new Date().toISOString()
+    };
+    const priceText = hunterStats?.lowest_price_jpy == null ? '価格なし' : '出品最安 ' + yen(hunterStats.lowest_price_jpy);
+    const countText = hunterStats?.num_for_sale == null ? '' : ` / 出品 ${hunterStats.num_for_sale}件`;
+    market.innerHTML = `Discogs同版: ${escapeHtml(item.title)} / ${priceText}${countText} <span class="muted">※成約相場ではなく現在の出品情報</span>` +
+      (item.uri ? ` <a href="${escapeHtml(item.uri)}" target="_blank" rel="noopener">根拠</a>` : '');
+    renderHunterMarketCandidates([item]);
+  } catch (e) {
+    hunterStats = null;
+    hunterMarketEvidence = null;
+    market.textContent = 'Discogs候補は選択済み / 価格取得失敗';
+  }
 }
 
 function updateHunterMargin() {
   const cost = Number($('#hunterCost').value || 0);
   const price = Number($('#hunterPrice').value || 0);
-  const gross = price - cost;
+  const feeRate = Number($('#hunterFeeRate').value || 0);
+  const shipping = Number($('#hunterShipping').value || 0);
+  const packaging = Number($('#hunterPackaging').value || 0);
+  const fee = Math.round(price * feeRate / 100);
+  const profit = price - cost - fee - shipping - packaging;
   $('#hunterMargin').textContent = price > 0
-    ? `参考粗利（手数料・送料前）: ${yen(gross)}`
-    : '売価を入れると参考粗利を表示';
+    ? `利益見込: ${yen(profit)} = 売価 ${yen(price)} − 仕入 ${yen(cost)} − 手数料 ${yen(fee)} − 送料 ${yen(shipping)} − 梱包 ${yen(packaging)}`
+    : '想定売価を入れると諸経費込み利益を表示';
 }
 
 async function visionStatus() {
@@ -582,8 +661,17 @@ $('#hunterResults').addEventListener('click', (e) => {
   if (!button) return;
   selectHunter(Number(button.dataset.index));
 });
+$('#hunterMarketLookup').onclick = lookupHunterMarket;
+$('#hunterMarketCandidates').addEventListener('click', (e) => {
+  const button = e.target.closest('.hunterMarketCandidate');
+  if (!button) return;
+  pickHunterMarket(Number(button.dataset.index));
+});
 $('#hunterCost').addEventListener('input', updateHunterMargin);
 $('#hunterPrice').addEventListener('input', updateHunterMargin);
+$('#hunterFeeRate').addEventListener('input', updateHunterMargin);
+$('#hunterShipping').addEventListener('input', updateHunterMargin);
+$('#hunterPackaging').addEventListener('input', updateHunterMargin);
 
 $('#hunterCamera').onclick = () => $('#hunterPhoto').click();
 $('#hunterPhoto').onchange = async () => {
@@ -629,8 +717,16 @@ $('#hunterAdd').onclick = async () => {
         barcode: hunterSelected.barcode,
         query_text: $('#hunterQuery').value.trim(),
         lowest_market_jpy: hunterStats?.lowest_price_jpy ?? null,
+        market_provider: hunterMarketEvidence?.provider || null,
+        market_source_id: hunterMarketEvidence?.release_id || null,
+        market_source_url: hunterMarketEvidence?.source_url || null,
+        market_num_for_sale: hunterMarketEvidence?.num_for_sale ?? null,
+        market_fetched_at: hunterMarketEvidence?.fetched_at || null,
         cost_jpy: $('#hunterCost').value || 0,
         price_jpy: $('#hunterPrice').value || null,
+        fee_rate_pct: $('#hunterFeeRate').value || 0,
+        shipping_jpy: $('#hunterShipping').value || 0,
+        packaging_jpy: $('#hunterPackaging').value || 0,
         location: $('#hunterLocation').value || null,
         quantity: $('#hunterQty').value || 1
       })
@@ -642,8 +738,13 @@ $('#hunterAdd').onclick = async () => {
     $('#hunterQuery').value = '';
     $('#hunterCost').value = '';
     $('#hunterPrice').value = '';
+    $('#hunterFeeRate').value = '';
+    $('#hunterShipping').value = '';
+    $('#hunterPackaging').value = '';
     hunterSelected = null;
     hunterStats = null;
+    hunterMarketCandidates = [];
+    hunterMarketEvidence = null;
     await Promise.all([summary(), inventory()]);
     log(j);
   } catch (e) {
