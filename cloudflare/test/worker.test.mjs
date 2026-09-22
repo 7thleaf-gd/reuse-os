@@ -269,12 +269,15 @@ test("Hunter add validation accepts inventory economics and rejects missing iden
     price_jpy: "1500",
     lowest_market_jpy: "1800",
     location: "BOX-1",
-    quantity: 1
+    quantity: 1,
+    intake_key: "hunter:test-0001"
   });
   assert.equal(valid.ok, true);
   assert.equal(valid.value.cost_jpy, 100);
   assert.equal(valid.value.price_jpy, 1500);
   assert.equal(valid.value.lowest_market_jpy, 1800);
+  assert.equal(valid.value.intake_key, "hunter:test-0001");
+  assert.equal(validateHunterAdd({ release_id: "383be31c-37a0-4e08-8cda-cbcbbc587ae5", title: "x", intake_key: "bad key" }).ok, false);
 
   assert.equal(validateHunterAdd({ title: "x" }).ok, false);
   assert.equal(validateHunterAdd({ release_id: "383be31c-37a0-4e08-8cda-cbcbbc587ae5" }).ok, false);

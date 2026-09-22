@@ -114,3 +114,11 @@ CREATE TABLE IF NOT EXISTS hunter_economics (
 );
 
 CREATE INDEX IF NOT EXISTS idx_hunter_market_source ON hunter_economics(market_provider, market_source_id);
+CREATE TABLE IF NOT EXISTS hunter_requests (
+  intake_key TEXT PRIMARY KEY,
+  sku TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (sku) REFERENCES inventory(sku) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_hunter_requests_sku ON hunter_requests(sku);

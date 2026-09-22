@@ -270,6 +270,7 @@ let hunterSelected = null;
 let hunterStats = null;
 let hunterMarketCandidates = [];
 let hunterMarketEvidence = null;
+let hunterIntakeKey = null;
 
 function hunterRateLimitMessage(e) {
   const retry = e?.data?.retry_after;
@@ -333,6 +334,7 @@ async function selectHunter(index) {
   hunterStats = null;
   hunterMarketCandidates = [];
   hunterMarketEvidence = null;
+  hunterIntakeKey = crypto.randomUUID();
   $('#hunterTitle').textContent = item.title || '';
   $('#hunterMeta').textContent = [item.year,item.country,item.format,item.label,item.catno,item.barcode,item.score != null ? 'MB score ' + item.score : null].filter(Boolean).join(' · ');
   $('#hunterCover').src = item.cover_image || item.thumb || '';
@@ -701,6 +703,9 @@ $('#hunterPhoto').onchange = async () => {
 
 $('#hunterAdd').onclick = async () => {
   if (!hunterSelected) return;
+  const button = $('#hunterAdd');
+  if (button.disabled) return;
+  button.disabled = true;
   const notice = $('#hunterNotice');
   notice.className = 'muted';
   notice.textContent = '在庫へ追加中…';
@@ -710,6 +715,7 @@ $('#hunterAdd').onclick = async () => {
       headers: {'content-type':'application/json'},
       body: JSON.stringify({
         release_id: hunterSelected.release_id,
+        intake_key: hunterIntakeKey,
         provider: hunterSelected.provider || 'MUSICBRAINZ',
         title: hunterSelected.title,
         format: hunterSelected.format,
@@ -732,7 +738,7 @@ $('#hunterAdd').onclick = async () => {
       })
     });
     notice.className = 'ok';
-    notice.textContent = '在庫追加: ' + j.sku;
+    notice.textContent = (j.idempotent ? '登録済みを再利用: ' : '在庫追加: ') + j.sku;
     $('#hunterPick').style.display = 'none';
     $('#hunterResults').innerHTML = '';
     $('#hunterQuery').value = '';
@@ -745,12 +751,15 @@ $('#hunterAdd').onclick = async () => {
     hunterStats = null;
     hunterMarketCandidates = [];
     hunterMarketEvidence = null;
+    hunterIntakeKey = null;
     await Promise.all([summary(), inventory()]);
     log(j);
   } catch (e) {
     notice.className = 'error';
     notice.textContent = e.message;
     log(e.data || String(e));
+  } finally {
+    button.disabled = false;
   }
 };
 
