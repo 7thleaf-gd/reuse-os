@@ -425,6 +425,8 @@ export function validateHunterAdd(body) {
 
   const sourceUrl = asOptionalString(body.source_url);
   const barcode = asOptionalString(body.barcode);
+  const intakeKey = asOptionalString(body.intake_key);
+  if (intakeKey && !/^[A-Za-z0-9._:-]{8,128}$/.test(intakeKey)) return { ok: false, error: "invalid intake_key" };
 
   return {
     ok: true,
@@ -448,7 +450,8 @@ export function validateHunterAdd(body) {
       market_source_id: asOptionalString(body.market_source_id),
       market_source_url: asOptionalString(body.market_source_url),
       market_num_for_sale: marketNum.value,
-      market_fetched_at: asOptionalString(body.market_fetched_at)
+      market_fetched_at: asOptionalString(body.market_fetched_at),
+      intake_key: intakeKey
     }
   };
 }
@@ -458,6 +461,10 @@ async function hunterAddToInventory(request, env) {
   if (!parsed.ok) return json({ ok: false, error: parsed.error }, 400);
 
   const v = parsed.value;
+  const intakeKey = v.intake_key || crypto.randomUUID();
+  const existing = await env.DB.prepare("SELECT sku FROM hunter_requests WHERE intake_key=? LIMIT 1").bind(intakeKey).first();
+  if (existing?.sku) return json({ ok: true, idempotent: true, sku: existing.sku, item: await inventoryDetail(env, existing.sku) });
+
   const sku = "HUNT-" + v.release_id + "-" + crypto.randomUUID().slice(0, 6).toUpperCase();
   const economics = calculateHunterEconomics(v);
 
@@ -490,9 +497,12 @@ async function hunterAddToInventory(request, env) {
       ).bind(
         sku, v.fee_rate_pct, economics.fee_jpy, v.shipping_jpy, v.packaging_jpy, economics.estimated_profit_jpy,
         v.market_provider, v.market_source_id, v.market_source_url, v.market_num_for_sale, v.market_fetched_at
-      )
+      ),
+      env.DB.prepare(`INSERT INTO hunter_requests (intake_key,sku) VALUES (?,?)`).bind(intakeKey, sku)
     ]);
   } catch (error) {
+    const raced = await env.DB.prepare("SELECT sku FROM hunter_requests WHERE intake_key=? LIMIT 1").bind(intakeKey).first().catch(() => null);
+    if (raced?.sku) return json({ ok: true, idempotent: true, sku: raced.sku, item: await inventoryDetail(env, raced.sku) });
     return json({
       ok: false,
       error: "HUNTER_INVENTORY_WRITE_FAILED",
@@ -502,6 +512,7 @@ async function hunterAddToInventory(request, env) {
 
   return json({
     ok: true,
+    idempotent: false,
     sku,
     item: await inventoryDetail(env, sku),
     source: {
