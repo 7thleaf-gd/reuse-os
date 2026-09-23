@@ -1,0 +1,78 @@
+version: 2.1
+
+jobs:
+  verify:
+    docker:
+      - image: cimg/node:22.20
+    steps:
+      - checkout
+      - run:
+          name: Verify legacy/core tests
+          command: |
+            node test/check-syntax.js
+            node test/run-all.js
+      - run:
+          name: Install Cloudflare dependencies
+          command: npm install --prefix cloudflare
+      - run:
+          name: Verify Cloudflare core
+          command: npm --prefix cloudflare test
+      - run:
+          name: Wrangler dry-run
+          command: npx --prefix cloudflare wrangler deploy --dry-run --config cloudflare/wrangler.jsonc
+
+  deploy-production:
+    docker:
+      - image: cimg/node:22.20
+    steps:
+      - checkout
+      - run:
+          name: Check required deploy variables
+          command: |
+            test -n "$CLOUDFLARE_API_TOKEN"
+            test -n "$CLOUDFLARE_ACCOUNT_ID"
+            test -n "$D1_DATABASE_ID"
+      - run:
+          name: Install Cloudflare dependencies
+          command: npm install --prefix cloudflare
+      - run:
+          name: Build production Wrangler config
+          command: |
+            node <<'NODE'
+            const fs = require("fs");
+            const source = JSON.parse(fs.readFileSync("cloudflare/wrangler.jsonc", "utf8"));
+            source.d1_databases = [{
+              binding: "DB",
+              database_name: "reuse-os-core-v0-db",
+              database_id: process.env.D1_DATABASE_ID
+            }];
+            delete source.r2_buckets;
+            fs.writeFileSync("cloudflare/.wrangler.ci.json", JSON.stringify(source, null, 2));
+            NODE
+      - run:
+          name: Apply D1 schema idempotently
+          command: |
+            cd cloudflare
+            npx wrangler d1 execute DB --remote --file=./schema.sql --config=./.wrangler.ci.json
+      - run:
+          name: Deploy Worker
+          command: |
+            cd cloudflare
+            npx wrangler deploy --config=./.wrangler.ci.json
+      - run:
+          name: Production readback
+          command: |
+            curl -fsS https://reuse-os-core-v0.7thleaf.workers.dev/health -o /tmp/health.json
+            node -e 'const h=require("/tmp/health.json"); if (!h.ok || h.service!=="reuse-os-core-v0" || h.bindings?.d1!==true) process.exit(1); console.log(h)'
+            curl -fsS https://reuse-os-core-v0.7thleaf.workers.dev/ -o /tmp/index.html
+            grep -q 'hunterIntakeKey' /tmp/index.html
+            grep -q 'intake_key' /tmp/index.html
+
+workflows:
+  verify-and-deploy:
+    jobs:
+      - verify
+      - deploy-production:
+          requires:
+            - verify
+          filters: pipeline.git.branch == "feat/cloudflare-core-v0"
