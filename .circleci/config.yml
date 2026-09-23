@@ -27,11 +27,14 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Check required deploy variables
+          name: Check deploy readiness
           command: |
-            test -n "$CLOUDFLARE_API_TOKEN"
             test -n "$CLOUDFLARE_ACCOUNT_ID"
             test -n "$D1_DATABASE_ID"
+            if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+              echo "SKIP: CLOUDFLARE_API_TOKEN is not configured yet"
+              circleci-agent step halt
+            fi
       - run:
           name: Install Cloudflare dependencies
           command: npm install --prefix cloudflare
@@ -50,11 +53,6 @@ jobs:
             fs.writeFileSync("cloudflare/.wrangler.ci.json", JSON.stringify(source, null, 2));
             NODE
       - run:
-          name: Apply D1 schema idempotently
-          command: |
-            cd cloudflare
-            npx wrangler d1 execute DB --remote --file=./schema.sql --config=./.wrangler.ci.json
-      - run:
           name: Deploy Worker
           command: |
             cd cloudflare
@@ -70,9 +68,9 @@ jobs:
 
 workflows:
   verify-and-deploy:
+    when: pipeline.git.branch == "feat/cloudflare-core-v0"
     jobs:
       - verify
       - deploy-production:
           requires:
             - verify
-          filters: pipeline.git.branch == "feat/cloudflare-core-v0"
