@@ -1,0 +1,20 @@
+version: 2.1
+
+jobs:
+  verify:
+    docker:
+      - image: cimg/node:20.19
+    resource_class: small
+    steps:
+      - checkout
+      - run:
+          name: Syntax and global-name checks
+          command: node test/check-syntax.js
+      - run:
+          name: Full test suite
+          command: node test/run-all.js
+
+workflows:
+  verify:
+    jobs:
+      - verify
