@@ -50,7 +50,7 @@ jobs:
       - run:
           name: Production readback
           command: |
-            curl -fsS https://reuse-os-core-v0.7thleaf.workers.dev/health -o /tmp/health.json
+            curl -fsS https://reuse-os-core-v0.7thleaf.workers.dev/api/health -o /tmp/health.json
             node -e 'const h=require("/tmp/health.json"); if (!h.ok || h.service!=="reuse-os-core-v0" || h.bindings?.d1!==true) process.exit(1); console.log(h)'
             curl -fsS https://reuse-os-core-v0.7thleaf.workers.dev/ -o /tmp/index.html
             grep -q 'hunterIntakeKey' /tmp/index.html
