@@ -1,0 +1,300 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  discogsHeaders,
+  requireAdmin,
+  validateInventoryCreate,
+  validateInventoryPatch,
+  validateSaleEvent,
+  nextInventoryAfterSale,
+  normalizeListingStatus,
+  shouldClearStopPending,
+  normalizeDiscogsListing,
+  discogsImportPlan,
+  normalizeHunterSearchResult,
+  validateHunterAdd,
+  scoreHunterDiscogsCandidate,
+  calculateHunterEconomics
+} from "../src/worker.js";
+
+test("Discogs auth header is built from secret without logging it", () => {
+  const h = discogsHeaders({ DISCOGS_TOKEN: "secret-token" });
+  assert.equal(h.Authorization, "Discogs token=secret-token");
+  assert.match(h["User-Agent"], /7thleaf-ReuseOS/);
+});
+
+test("admin guard fails closed when secret is missing", async () => {
+  const req = new Request("https://example.test/api/inventory");
+  const result = requireAdmin(req, {});
+  assert.equal(result.ok, false);
+  assert.equal(result.response.status, 503);
+});
+
+test("admin guard accepts exact bearer token", () => {
+  const req = new Request("https://example.test/api/inventory", {
+    headers: { authorization: "Bearer abc" }
+  });
+  const result = requireAdmin(req, { ADMIN_TOKEN: "abc" });
+  assert.equal(result.ok, true);
+});
+
+test("inventory create normalizes valid fields", () => {
+  const result = validateInventoryCreate({
+    product_name: "  Test CD  ",
+    category: "music",
+    quantity: "2",
+    cost_jpy: "100",
+    price_jpy: "1800",
+    location: " A-01 "
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.value, {
+    sku: null,
+    category: "MUSIC",
+    product_name: "Test CD",
+    format: null,
+    media_condition: null,
+    sleeve_condition: null,
+    cost_jpy: 100,
+    price_jpy: 1800,
+    location: "A-01",
+    quantity: 2
+  });
+});
+
+test("inventory create rejects invalid category and negative values", () => {
+  assert.equal(validateInventoryCreate({ product_name: "x", category: "ALIEN" }).ok, false);
+  assert.equal(validateInventoryCreate({ product_name: "x", cost_jpy: -1 }).ok, false);
+  assert.equal(validateInventoryCreate({ product_name: "x", quantity: 0 }).ok, false);
+});
+
+test("inventory create rejects unsafe sku characters", () => {
+  const result = validateInventoryCreate({ product_name: "x", sku: "../oops" });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "invalid sku");
+});
+
+test("inventory patch is whitelist-only", () => {
+  const result = validateInventoryPatch({ status: "sold", quantity: 0, location: null });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.value, { status: "SOLD", quantity: 0, location: null });
+
+  const denied = validateInventoryPatch({ sku: "rewrite-me" });
+  assert.equal(denied.ok, false);
+  assert.match(denied.error, /not editable/);
+});
+
+test("inventory patch rejects empty body", () => {
+  const result = validateInventoryPatch({});
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "no editable fields");
+});
+
+
+test("sale event validation requires stable id, sku and channel", () => {
+  const valid = validateSaleEvent({
+    event_id: "discogs:order-123",
+    sku: "AUDIO-1",
+    channel: "discogs",
+    sale_price_jpy: "1500"
+  });
+  assert.equal(valid.ok, true);
+  assert.equal(valid.value.channel, "DISCOGS");
+  assert.equal(valid.value.sale_price_jpy, 1500);
+
+  assert.equal(validateSaleEvent({ sku: "AUDIO-1", channel: "DISCOGS" }).ok, false);
+  assert.equal(validateSaleEvent({ event_id: "../bad", sku: "AUDIO-1", channel: "DISCOGS" }).ok, false);
+});
+
+test("sale state decrements stock without destructive action", () => {
+  assert.deepEqual(nextInventoryAfterSale(1), {
+    quantity: 0,
+    status: "SOLD",
+    sync_state: "STOP_PENDING"
+  });
+  assert.deepEqual(nextInventoryAfterSale(3), {
+    quantity: 2,
+    status: "AVAILABLE",
+    sync_state: "SYNC_PENDING"
+  });
+});
+
+
+test("listing status normalizes marketplace variants", () => {
+  assert.deepEqual(normalizeListingStatus("For Sale"), { ok: true, value: "LISTED" });
+  assert.deepEqual(normalizeListingStatus("active"), { ok: true, value: "LISTED" });
+  assert.deepEqual(normalizeListingStatus("sold"), { ok: true, value: "SOLD" });
+  assert.equal(normalizeListingStatus("mystery").ok, false);
+});
+
+
+test("stop queue clears only when sold item has no listed channels left", () => {
+  assert.equal(shouldClearStopPending("SOLD", "STOP_PENDING", 0), true);
+  assert.equal(shouldClearStopPending("SOLD", "STOP_PENDING", 1), false);
+  assert.equal(shouldClearStopPending("AVAILABLE", "STOP_PENDING", 0), false);
+  assert.equal(shouldClearStopPending("SOLD", "SYNCED", 0), false);
+});
+
+
+test("Discogs listing normalization keeps only fields Reuse OS needs", () => {
+  const listing = normalizeDiscogsListing({
+    id: 12345,
+    status: "For Sale",
+    condition: "Mint (M)",
+    sleeve_condition: "Mint (M)",
+    location: "LIGHT-CD-BOX1",
+    external_id: "LIGHT-001",
+    quantity: 4,
+    price: { value: "1500.00", currency: "JPY" },
+    release: {
+      id: 987,
+      description: "Pampas Field Ass Kickers - Light!",
+      format: ["CD", "EP"]
+    },
+    comments: "label stock",
+    uri: "https://www.discogs.com/sell/item/12345"
+  });
+
+  assert.deepEqual(listing, {
+    listing_id: "12345",
+    release_id: "987",
+    external_id: "LIGHT-001",
+    title: "Pampas Field Ass Kickers - Light!",
+    format: "CD, EP",
+    media_condition: "Mint (M)",
+    sleeve_condition: "Mint (M)",
+    price: 1500,
+    currency: "JPY",
+    quantity: 4,
+    status: "For Sale",
+    location: "LIGHT-CD-BOX1",
+    comments: "label stock",
+    uri: "https://www.discogs.com/sell/item/12345"
+  });
+});
+
+test("Discogs import plan is deterministic and non-destructive", () => {
+  const plan = discogsImportPlan({
+    listing_id: "12345",
+    release_id: "987",
+    external_id: null,
+    title: "Pampas Field Ass Kickers - Light!",
+    format: "CD",
+    media_condition: "Mint (M)",
+    sleeve_condition: "Mint (M)",
+    price: 1500,
+    currency: "JPY",
+    quantity: 2,
+    status: "For Sale",
+    location: "LIGHT-CD-BOX1",
+    comments: null,
+    uri: "https://www.discogs.com/sell/item/12345"
+  });
+
+  assert.equal(plan.ok, true);
+  assert.equal(plan.value.sku, "DISC-12345");
+  assert.equal(plan.value.inventory.price_jpy, 1500);
+  assert.equal(plan.value.inventory.quantity, 2);
+  assert.equal(plan.value.channel.listing_status, "LISTED");
+  assert.equal(plan.value.channel.external_id, "12345");
+});
+
+test("Discogs import plan never labels non-JPY source price as JPY", () => {
+  const plan = discogsImportPlan({
+    listing_id: "9",
+    title: "Foreign currency listing",
+    price: 20,
+    currency: "USD",
+    status: "For Sale"
+  });
+
+  assert.equal(plan.ok, true);
+  assert.equal(plan.value.inventory.price_jpy, null);
+  assert.equal(plan.value.channel.price_jpy, null);
+  assert.match(plan.value.channel.last_note, /source_currency=USD/);
+});
+
+test("Discogs import plan prefers safe seller external_id as SKU", () => {
+  const plan = discogsImportPlan({
+    listing_id: "10",
+    external_id: "STORE:CD-10",
+    title: "Mapped listing",
+    currency: "JPY",
+    price: 1000,
+    status: "For Sale"
+  });
+
+  assert.equal(plan.ok, true);
+  assert.equal(plan.value.sku, "STORE:CD-10");
+});
+
+
+test("Hunter search result normalization keeps useful Discogs fields", () => {
+  const item = normalizeHunterSearchResult({
+    id: 123,
+    title: "Artist - Album",
+    year: 1999,
+    country: "Japan",
+    format: ["CD", "Album"],
+    label: ["Label"],
+    catno: "ABC-001",
+    barcode: ["4988000000000"],
+    uri: "/release/123-Artist-Album",
+    thumb: "https://img.example/thumb.jpg",
+    cover_image: "https://img.example/cover.jpg"
+  });
+
+  assert.deepEqual(item, {
+    release_id: "123",
+    title: "Artist - Album",
+    year: 1999,
+    country: "Japan",
+    format: "CD, Album",
+    label: "Label",
+    catno: "ABC-001",
+    barcode: "4988000000000",
+    thumb: "https://img.example/thumb.jpg",
+    cover_image: "https://img.example/cover.jpg",
+    uri: "https://www.discogs.com/release/123-Artist-Album"
+  });
+});
+
+test("Hunter add validation accepts inventory economics and rejects missing identity", () => {
+  const valid = validateHunterAdd({
+    release_id: "383be31c-37a0-4e08-8cda-cbcbbc587ae5",
+    provider: "MUSICBRAINZ",
+    title: "Artist - Album",
+    format: "CD",
+    cost_jpy: "100",
+    price_jpy: "1500",
+    lowest_market_jpy: "1800",
+    location: "BOX-1",
+    quantity: 1,
+    intake_key: "hunter:test-0001"
+  });
+  assert.equal(valid.ok, true);
+  assert.equal(valid.value.cost_jpy, 100);
+  assert.equal(valid.value.price_jpy, 1500);
+  assert.equal(valid.value.lowest_market_jpy, 1800);
+  assert.equal(valid.value.intake_key, "hunter:test-0001");
+  assert.equal(validateHunterAdd({ release_id: "383be31c-37a0-4e08-8cda-cbcbbc587ae5", title: "x", intake_key: "bad key" }).ok, false);
+
+  assert.equal(validateHunterAdd({ title: "x" }).ok, false);
+  assert.equal(validateHunterAdd({ release_id: "383be31c-37a0-4e08-8cda-cbcbbc587ae5" }).ok, false);
+});
+
+
+test("Hunter Discogs candidate scoring prefers exact barcode and catalog number", () => {
+  const scored = scoreHunterDiscogsCandidate(
+    { title: "Artist - Album", barcode: "4988000000000", catno: "ABC-001", format: "CD" },
+    { title: "Artist - Album", barcode: "4988000000000", catno: "ABC-001", format: "CD" }
+  );
+  assert.ok(scored.score >= 180);
+  assert.deepEqual(scored.reasons.slice(0, 2), ["barcode", "catno"]);
+});
+
+test("Hunter economics subtracts fee, shipping and packaging", () => {
+  assert.deepEqual(calculateHunterEconomics({
+    cost_jpy: 300, price_jpy: 1500, fee_rate_pct: 10, shipping_jpy: 210, packaging_jpy: 50
+  }), { fee_jpy: 150, estimated_profit_jpy: 790 });
+});

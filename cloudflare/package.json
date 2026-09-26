@@ -1,0 +1,16 @@
+{
+  "name": "reuse-os-cloudflare-core",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:local": "wrangler d1 execute DB --local --file=./schema.sql",
+    "db:remote": "wrangler d1 execute DB --remote --file=./schema.sql",
+    "test": "node --check src/worker.js && node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.38.0"
+  }
+}

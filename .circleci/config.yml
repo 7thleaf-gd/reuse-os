@@ -1,0 +1,66 @@
+version: 2.1
+
+jobs:
+  verify:
+    docker:
+      - image: cimg/node:22.20
+    steps:
+      - checkout
+      - run:
+          name: Verify legacy/core tests
+          command: |
+            node test/check-syntax.js
+            node test/run-all.js
+      - run:
+          name: Install Cloudflare dependencies
+          command: npm install --prefix cloudflare
+      - run:
+          name: Verify Cloudflare core
+          command: npm --prefix cloudflare test
+      - run:
+          name: Wrangler dry-run
+          command: npx --prefix cloudflare wrangler deploy --dry-run --config cloudflare/wrangler.jsonc
+
+  deploy-production:
+    docker:
+      - image: cimg/node:22.20
+    steps:
+      - checkout
+      - run:
+          name: Check deploy readiness
+          command: |
+            test -n "$CLOUDFLARE_ACCOUNT_ID"
+            test -n "$D1_DATABASE_ID"
+            if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+              echo "SKIP: CLOUDFLARE_API_TOKEN is not configured yet"
+              circleci-agent step halt
+            fi
+      - run:
+          name: Install Cloudflare dependencies
+          command: npm install --prefix cloudflare
+      - run:
+          name: Build production Wrangler config
+          command: |
+            node -e 'const fs=require("fs"); const source=JSON.parse(fs.readFileSync("cloudflare/wrangler.jsonc","utf8")); source.d1_databases=[{binding:"DB",database_name:"reuse-os-core-v0-db",database_id:process.env.D1_DATABASE_ID}]; delete source.r2_buckets; fs.writeFileSync("cloudflare/.wrangler.ci.json",JSON.stringify(source,null,2));'
+      - run:
+          name: Deploy Worker
+          command: |
+            cd cloudflare
+            npx wrangler deploy --config=./.wrangler.ci.json
+      - run:
+          name: Production readback
+          command: |
+            curl -fsS https://reuse-os-core-v0.7thleaf.workers.dev/api/health -o /tmp/health.json
+            node -e 'const h=require("/tmp/health.json"); if (!h.ok || h.service!=="reuse-os-core-v0" || h.bindings?.d1!==true) process.exit(1); console.log(h)'
+            curl -fsS https://reuse-os-core-v0.7thleaf.workers.dev/ -o /tmp/index.html
+            grep -q 'hunterIntakeKey' /tmp/index.html
+            grep -q 'intake_key' /tmp/index.html
+
+workflows:
+  verify-and-deploy:
+    when: pipeline.git.branch == "feat/cloudflare-core-v0"
+    jobs:
+      - verify
+      - deploy-production:
+          requires:
+            - verify
