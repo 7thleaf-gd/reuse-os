@@ -8,13 +8,17 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Syntax and global-name checks
-          command: node test/check-syntax.js
-      - run:
-          name: Full test suite
-          command: node test/run-all.js
+          name: Retired legacy CI marker
+          command: |
+            echo "RETIRED: canonical product CI is 7thleaf-factory/core product-reuse-os"
+            exit 0
 
 workflows:
-  verify:
+  legacy_verify_retired:
     jobs:
-      - verify
+      - verify:
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              ignore: /.*/
