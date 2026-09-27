@@ -1,3 +1,5 @@
+> **LEGACY SOURCE / HISTORY — 2026-09-28:** Canonical product source and CI authority is `7thleaf-factory/core/products/reuse-os/`. This repository is retained for source history and rollback evidence. Read `CURRENT.md` before any change; product changes belong in FACTORY.
+
 # REUSE / 7THLEAF USED GOODS OS
 
 中古品の「撮影 → 商品特定 → 相場 → 在庫化 → 複数販路出品 → 売却時の他販路自動停止」を回すシステム。
