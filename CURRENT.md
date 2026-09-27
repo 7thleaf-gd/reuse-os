@@ -1,7 +1,7 @@
 # CURRENT — REUSE OS
 
 Updated: 2026-09-28
-State: SOURCE HISTORY RETAINED / FACTORY IS CANONICAL / LEGACY CI REMOVED
+State: SOURCE HISTORY RETAINED / FACTORY IS CANONICAL / LEGACY CI DISABLED
 
 ## Canonical authority
 - Product source and CI authority: `7thleaf-factory/core/products/reuse-os/`
@@ -10,9 +10,10 @@ State: SOURCE HISTORY RETAINED / FACTORY IS CANONICAL / LEGACY CI REMOVED
 
 ## Legacy repository role
 - This repository is retained for source history and rollback evidence.
-- Legacy CircleCI configuration has been removed from the active branch.
-- Git history is retained; source history deletion is not authorized.
+- Legacy CircleCI config is retained only as a retirement marker.
+- All branches and tags are ignored, so the legacy verify job does not run.
 - Do not add product completion, OAuth, marketplace connection, or sale-readiness work here.
+- Source history deletion is not authorized.
 
 ## Cutover evidence
 - FACTORY merge: https://github.com/7thleaf-factory/core/pull/33
